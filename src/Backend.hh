@@ -15,6 +15,7 @@ public:
   virtual void start();
   virtual void scan(Watcher &watcher) = 0;
   virtual void writeSnapshot(Watcher &watcher, std::string *snapshotPath) = 0;
+  virtual void updateSnapshot(Watcher &watcher, std::string *snapshotPath, std::shared_ptr<DirEntry> direntry, std::string *action) = 0;
   virtual void getEventsSince(Watcher &watcher, std::string *snapshotPath) = 0;
   virtual void subscribe(Watcher &watcher) = 0;
   virtual void unsubscribe(Watcher &watcher) = 0;

@@ -19,6 +19,7 @@ class BruteForceBackend : public Backend {
 public:
   void scan(Watcher &watcher) override;
   void writeSnapshot(Watcher &watcher, std::string *snapshotPath) override;
+  void updateSnapshot(Watcher &watcher, std::string *snapshotPath, std::shared_ptr<DirEntry> direntry, std::string *action) override;
   void getEventsSince(Watcher &watcher, std::string *snapshotPath) override;
   void subscribe(Watcher &watcher) override {
     throw "Brute force backend doesn't support subscriptions.";

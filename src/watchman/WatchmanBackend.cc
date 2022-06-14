@@ -250,6 +250,8 @@ void WatchmanBackend::writeSnapshot(Watcher &watcher, std::string *snapshotPath)
   ofs << clock(watcher);
 }
 
+void WatchmanBackend::updateSnapshot(Watcher &watcher, std::string *snapshotPath, std::shared_ptr<DirEntry> direntry, std::string *action) {}
+
 void WatchmanBackend::getEventsSince(Watcher &watcher, std::string *snapshotPath) {
   std::unique_lock<std::mutex> lock(mMutex);
   std::ifstream ifs(*snapshotPath);

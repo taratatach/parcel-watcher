@@ -48,6 +48,17 @@ declare module.exports: {
     dir: FilePath,
     opts?: Options
   ): Promise<Array<Event>>,
+  updateSnapshot(
+    dir: FilePath,
+    snapshot: FilePath,
+    entry: {
+      path: FilePath,
+      mtime: number,
+      isDir: boolean,
+      eventType: EventType
+    },
+    opts?: Options
+  ): Promise<FilePath>,
   writeSnapshot(
     dir: FilePath,
     snapshot: FilePath,

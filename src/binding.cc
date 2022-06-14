@@ -38,6 +38,22 @@ std::shared_ptr<Backend> getBackend(Env env, Value opts) {
   return Backend::getShared(backendName);
 }
 
+std::shared_ptr<DirEntry> buildDirEntry(Env env, Value entry) {
+  Value path = entry.As<Object>().Get(String::New(env, "path"));
+  Value ino = entry.As<Object>().Get(String::New(env, "ino"));
+  Value mtime = entry.As<Object>().Get(String::New(env, "mtime"));
+  Value isDir = entry.As<Object>().Get(String::New(env, "isDir"));
+
+  DirEntry direntry{
+    std::string(path.As<String>().Utf8Value().c_str()),
+    ino_t(ino.As<Number>().Int64Value()),
+    uint64_t(mtime.As<Number>().Int64Value()),
+    bool(isDir.As<Boolean>())
+  };
+
+  return std::make_shared<DirEntry>(direntry);
+}
+
 class WriteSnapshotRunner : public PromiseRunner {
 public:
   WriteSnapshotRunner(Env env, Value dir, Value snap, Value opts)
@@ -62,6 +78,38 @@ private:
 
   void execute() override {
     backend->writeSnapshot(*watcher, &snapshotPath);
+  }
+};
+
+class UpdateSnapshotRunner : public PromiseRunner {
+public:
+  UpdateSnapshotRunner(Env env, Value dir, Value snap, Value entry, Value opts)
+    : PromiseRunner(env),
+      snapshotPath(std::string(snap.As<String>().Utf8Value().c_str())),
+      eventType(std::string(entry.As<Object>().Get(String::New(env, "eventType")).As<String>().Utf8Value().c_str())) {
+    watcher = Watcher::getShared(
+      std::string(dir.As<String>().Utf8Value().c_str()),
+      getIgnore(env, opts)
+    );
+
+    direntry = buildDirEntry(env, entry);
+
+    backend = getBackend(env, opts);
+  }
+
+  ~UpdateSnapshotRunner() {
+    watcher->unref();
+    backend->unref();
+  }
+private:
+  std::shared_ptr<Backend> backend;
+  std::shared_ptr<Watcher> watcher;
+  std::shared_ptr<DirEntry> direntry;
+  std::string snapshotPath;
+  std::string eventType;
+
+  void execute() override {
+    backend->updateSnapshot(*watcher, &snapshotPath, direntry, &eventType);
   }
 };
 
@@ -126,6 +174,32 @@ Value queueSnapshotWork(const CallbackInfo& info) {
 
 Value writeSnapshot(const CallbackInfo& info) {
   return queueSnapshotWork<WriteSnapshotRunner>(info);
+}
+
+Value updateSnapshot(const CallbackInfo& info) {
+  Env env = info.Env();
+  if (info.Length() < 1 || !info[0].IsString()) {
+    TypeError::New(env, "Expected a string").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  if (info.Length() < 2 || !info[1].IsString()) {
+    TypeError::New(env, "Expected a string").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  if (info.Length() < 3 || !info[2].IsObject()) {
+    TypeError::New(env, "Expected an object").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  if (info.Length() >= 4 || !info[3].IsObject()) {
+    TypeError::New(env, "Expected an object").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  UpdateSnapshotRunner *runner = new UpdateSnapshotRunner(info.Env(), info[0], info[1], info[2], info[3]);
+  return runner->queue();
 }
 
 Value getEventsSince(const CallbackInfo& info) {
@@ -278,6 +352,10 @@ Object Init(Env env, Object exports) {
   exports.Set(
     String::New(env, "writeSnapshot"),
     Function::New(env, writeSnapshot)
+  );
+  exports.Set(
+    String::New(env, "updateSnapshot"),
+    Function::New(env, updateSnapshot)
   );
   exports.Set(
     String::New(env, "getEventsSince"),
