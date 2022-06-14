@@ -10,6 +10,7 @@ public:
   ~FSEventsBackend();
   void scan(Watcher &watcher) override;
   void writeSnapshot(Watcher &watcher, std::string *snapshotPath) override;
+  void updateSnapshot(Watcher &watcher, std::string *snapshotPath, std::shared_ptr<DirEntry> direntry, std::string *action) override;
   void getEventsSince(Watcher &watcher, std::string *snapshotPath) override;
   void subscribe(Watcher &watcher) override;
   void unsubscribe(Watcher &watcher) override;

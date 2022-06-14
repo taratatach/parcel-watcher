@@ -23,6 +23,15 @@ exports.writeSnapshot = (dir, snapshot, opts) => {
   );
 };
 
+exports.updateSnapshot = (dir, snapshot, entry, opts) => {
+  return binding.updateSnapshot(
+    path.resolve(dir),
+    path.resolve(snapshot),
+    entry,
+    normalizeOptions(dir, opts),
+  );
+};
+
 exports.getEventsSince = (dir, snapshot, opts) => {
   return binding.getEventsSince(
     path.resolve(dir),
