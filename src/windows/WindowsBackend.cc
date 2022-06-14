@@ -21,8 +21,8 @@ void BruteForceBackend::readTree(Watcher &watcher, std::shared_ptr<DirTree> tree
     std::string spec = path + "\\*";
     directories.pop();
 
-    WIN32_FIND_DATA ffd;
-    hFind = FindFirstFile(spec.c_str(), &ffd);
+    WIN32_FIND_DATAW ffd;
+    hFind = FindFirstFileW(utf8ToUtf16(spec).data(), &ffd);
 
     if (hFind == INVALID_HANDLE_VALUE)  {
       if (path == watcher.mDir) {
@@ -35,8 +35,8 @@ void BruteForceBackend::readTree(Watcher &watcher, std::shared_ptr<DirTree> tree
     }
 
     do {
-      if (strcmp(ffd.cFileName, ".") != 0 && strcmp(ffd.cFileName, "..") != 0) {
-        std::string fullPath = path + "\\" + ffd.cFileName;
+      if (wcscmp(ffd.cFileName, L".") != 0 && wcscmp(ffd.cFileName, L"..") != 0) {
+        std::string fullPath = path + "\\" + utf16ToUtf8(ffd.cFileName, sizeof(ffd.cFileName));
         if (watcher.mIgnore.count(fullPath) > 0) {
           continue;
         }
@@ -46,7 +46,7 @@ void BruteForceBackend::readTree(Watcher &watcher, std::shared_ptr<DirTree> tree
           directories.push(fullPath);
         }
       }
-    } while (FindNextFile(hFind, &ffd) != 0);
+    } while (FindNextFileW(hFind, &ffd) != 0);
 
     FindClose(hFind);
   }
