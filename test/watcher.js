@@ -395,6 +395,36 @@ describe('watcher', () => {
             {type: 'create', path: getPath('dir2/subdir2')},
           ]);
         });
+
+        it('should emit when a directory is deleted after its ancestor was renamed', async () => {
+          if (backend === 'watchman' || backend === 'fsevents') {
+            // Not implemented yet
+            return;
+          }
+
+          let base = getFilename();
+          await fs.mkdir(base);
+          await nextEvent();
+
+          let getPath = p => path.join(base, p);
+
+          await fs.mkdir(getPath('dir'));
+          await nextEvent();
+          await fs.mkdir(getPath('dir/subdir'));
+          await nextEvent();
+          await fs.mkdir(getPath('dir/subdir/subsubdir'));
+          await nextEvent();
+
+          await fs.rename(getPath('dir'), getPath('dir2'));
+          await fs.remove(getPath('dir2/subdir/subsubdir'));
+
+          let res = await nextEvent();
+          assert.deepEqual(res, [
+            {type: 'delete', path: getPath('dir')},
+            {type: 'create', path: getPath('dir2')},
+            {type: 'delete', path: getPath('dir2/subdir/subsubdir')},
+          ]);
+        });
       });
 
       describe('symlinks', () => {

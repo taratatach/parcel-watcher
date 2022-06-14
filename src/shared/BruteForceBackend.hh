@@ -5,6 +5,16 @@
 #include "../DirTree.hh"
 #include "../Watcher.hh"
 
+struct PendingMove {
+  std::chrono::system_clock::time_point created;
+  std::string path;
+
+  PendingMove(
+      std::chrono::system_clock::time_point created,
+      const std::string& path)
+      : created(created), path(path) {}
+};
+
 class BruteForceBackend : public Backend {
 public:
   void writeSnapshot(Watcher &watcher, std::string *snapshotPath) override;

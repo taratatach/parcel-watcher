@@ -157,6 +157,15 @@ public:
     if (!success) {
       throw WatcherError("Failed to read changes", mWatcher);
     }
+
+    auto now = std::chrono::system_clock::now();
+    for (auto it = pendingMoves.begin(); it != pendingMoves.end();) {
+      if (now - it->second.created > std::chrono::seconds(5)) {
+        it = pendingMoves.erase(it);
+      } else {
+        ++it;
+      }
+    }
   }
 
   void processEvents(DWORD errorCode) {
@@ -215,6 +224,8 @@ public:
   }
 
   void processEvent(PFILE_NOTIFY_INFORMATION info) {
+    auto now = std::chrono::system_clock::now();
+
     std::string path = mWatcher->mDir + "\\" + utf16ToUtf8(info->FileName, info->FileNameLength / sizeof(WCHAR));
     if (mWatcher->isIgnored(path)) {
       return;
@@ -225,8 +236,34 @@ public:
       case FILE_ACTION_RENAMED_NEW_NAME: {
         WIN32_FILE_ATTRIBUTE_DATA data;
         if (GetFileAttributesExW(extendedWidePath(path).data(), GetFileExInfoStandard, &data)) {
-          mWatcher->mEvents.create(path);
-          mTree->add(path, CONVERT_TIME(data.ftLastWriteTime), data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
+          bool isDir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+          std::string fileId = getFileId(path);
+
+          auto found = pendingMoves.find(fileId);
+          if (found != pendingMoves.end()) {
+            PendingMove pending = found->second;
+
+            if (isDir) {
+              std::string dirPath = pending.path + DIR_SEP;
+              // Replace parent dir path in tree
+              for (auto it = mTree->entries.begin(); it != mTree->entries.end();) {
+                DirEntry entry = it->second;
+                if (entry.path.rfind(dirPath.c_str(), 0) == 0) {
+                  entry.path.replace(0, pending.path.length(), path);
+                  mTree->entries.emplace(entry.path, entry);
+                  it = mTree->entries.erase(it);
+                } else {
+                 it++;
+                }
+              }
+            }
+
+            mWatcher->mEvents.create(path);
+            pendingMoves.erase(found);
+          } else {
+            mWatcher->mEvents.create(path);
+          }
+          mTree->add(path, CONVERT_TIME(data.ftLastWriteTime), isDir);
         }
         break;
       }
@@ -242,8 +279,12 @@ public:
       }
       case FILE_ACTION_REMOVED:
       case FILE_ACTION_RENAMED_OLD_NAME:
-        mWatcher->mEvents.remove(path);
-        mTree->remove(path);
+        DirEntry *entry = mTree->find(path);
+        if (entry) {
+          pendingMoves.emplace(entry->fileId, PendingMove(now, path));
+          mWatcher->mEvents.remove(path);
+          mTree->remove(path);
+        }
         break;
     }
   }
@@ -252,6 +293,7 @@ private:
   WindowsBackend *mBackend;
   Watcher *mWatcher;
   std::shared_ptr<DirTree> mTree;
+  std::unordered_multimap<std::string, PendingMove> pendingMoves;
   bool mRunning;
   HANDLE mDirectoryHandle;
   std::vector<BYTE> mReadBuffer;
