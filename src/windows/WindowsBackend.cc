@@ -43,6 +43,7 @@ void BruteForceBackend::readTree(Watcher &watcher, std::shared_ptr<DirTree> tree
 
         std::string fileId = getFileId(fullPath);
 
+        //std::cout << "Adding " << fullPath << " (" << fileId << ") into tree" << std::endl;
         tree->add(fullPath, FAKE_INO, CONVERT_TIME(ffd.ftLastWriteTime), ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY, fileId);
         if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
           directories.push(fullPath);
@@ -233,13 +234,17 @@ public:
       return;
     }
 
+    //std::cout << "Event for " << path << std::endl;
+
     switch (info->Action) {
       case FILE_ACTION_ADDED:
       case FILE_ACTION_RENAMED_NEW_NAME: {
+        //std::cout << (info->Action == FILE_ACTION_ADDED ? "added" : "renamed into") << " " << path << std::endl;
         WIN32_FILE_ATTRIBUTE_DATA data;
         if (GetFileAttributesExW(utf8ToUtf16(path).data(), GetFileExInfoStandard, &data)) {
           bool isDir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
           std::string fileId = getFileId(path);
+          //std::cout << "fileid: " << fileId << std::endl;
 
           auto found = pendingMoves.find(fileId);
           if (found != pendingMoves.end()) {
@@ -283,14 +288,23 @@ public:
       }
       case FILE_ACTION_REMOVED:
       case FILE_ACTION_RENAMED_OLD_NAME:
+        //std::cout << (info->Action == FILE_ACTION_REMOVED ? "deleted" : "renamed from") << " " << path << std::endl;
         DirEntry *entry = mTree->find(path);
         if (entry) {
+          //std::cout << "fileid: " << entry->fileId << std::endl;
           pendingMoves.emplace(entry->fileId, PendingMove(now, path));
           mWatcher->mEvents.remove(path, entry->isDir, entry->ino, entry->fileId);
           mTree->remove(path);
+        } else {
+          //std::cout << "No entry!" << std::endl;
+          //std::cout << "Tree:" << std::endl;
+          //for (auto it = mTree->entries.begin(); it != mTree->entries.end(); it++) {
+          //  std::cout << it->first << " -> " << it->second.path << std::endl;
+          //}
         }
         break;
     }
+    //std::cout << std::endl;
   }
 
 private:

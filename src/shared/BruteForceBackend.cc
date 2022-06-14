@@ -6,12 +6,15 @@
 
 std::shared_ptr<DirTree> BruteForceBackend::getTree(Watcher &watcher, bool shouldRead, bool recursiveRemove) {
   auto tree = DirTree::getCached(watcher.mDir, recursiveRemove);
+  //std::cout << "getTree " << watcher.mDir << std::endl;
 
   // If the tree is not complete, read it if needed.
   if (!tree->isComplete && shouldRead) {
     readTree(watcher, tree);
     tree->isComplete = true;
   }
+
+  //std::cout << "entries: " << std::endl;
 
   return tree;
 }
@@ -20,6 +23,7 @@ void BruteForceBackend::scan(Watcher &watcher) {
   std::unique_lock<std::mutex> lock(mMutex);
   auto tree = getTree(watcher);
   for (auto it = tree->entries.begin(); it != tree->entries.end(); it++) {
+    //std::cout << "BruteForceBackend::scan entry " << it->first << " " << it->second.path << std::endl;
     watcher.mEvents.create(it->second.path, it->second.ino, it->second.isDir, it->second.fileId);
   }
 }

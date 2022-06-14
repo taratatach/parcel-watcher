@@ -99,6 +99,7 @@ Value Watcher::callbackEventsToJS(const Env& env) {
   Array arr = Array::New(env, mCallbackEvents.size());
   size_t currentEventIndex = 0;
   for (auto eventIterator = mCallbackEvents.begin(); eventIterator != mCallbackEvents.end(); eventIterator++) {
+    //eventIterator->print("callbackEventsToJS");
     arr.Set(currentEventIndex++, eventIterator->toJS(env));
   }
   return scope.Escape(arr);

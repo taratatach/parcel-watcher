@@ -2,6 +2,7 @@
 #include <poll.h>
 #include <unistd.h>
 #include "InotifyBackend.hh"
+#include <iostream>
 
 #define INOTIFY_MASK \
   IN_ATTRIB | IN_CREATE | IN_DELETE | \
@@ -63,6 +64,7 @@ InotifyBackend::~InotifyBackend() {
 
 // This function is called by Backend::watch which takes a lock on mMutex
 void InotifyBackend::subscribe(Watcher &watcher) {
+  //std::cout << "InotifyBackend::subscribe" << std::endl;
   // Build a full directory tree recursively, and watch each directory.
   std::shared_ptr<DirTree> tree = getTree(watcher);
 
@@ -77,6 +79,15 @@ void InotifyBackend::subscribe(Watcher &watcher) {
 }
 
 bool InotifyBackend::watchDir(Watcher &watcher, std::string path, std::shared_ptr<DirTree> tree) {
+  //std::cout << "Checking existing subscriptions to " << path << "\n";
+  //for (auto it = mSubscriptions.begin(); it != mSubscriptions.end(); it++) {
+  //  std::cout << "Sub : " << it->second->path << "\n";
+  //  if (it->second->path == path) {
+  //    std::cout << "Already subscribed to " << path << "\n";
+  //    return true;
+  //  }
+  //}
+
   int wd = inotify_add_watch(mInotify, path.c_str(), INOTIFY_MASK);
   if (wd == -1) {
     return false;
@@ -121,6 +132,8 @@ void InotifyBackend::handleEvents() {
         continue;
       }
 
+      //std::cout << "\nGot event : " << event->name << " | " << event->mask << "\n";
+
       handleEvent(event, now, watchers);
     }
   }
@@ -129,6 +142,7 @@ void InotifyBackend::handleEvents() {
   // See https://github.com/facebook/watchman/blob/c7e0772cfb327ca1978488829c76829835c950ce/watchman/watcher/inotify.cpp#L436-L460
   auto now = std::chrono::system_clock::now();
   for (auto it = pendingMoves.begin(); it != pendingMoves.end();) {
+    //std::cout << std::endl << "pending move from: " << it->second.path << std::endl;
     if (now - it->second.created > std::chrono::seconds(5)) {
       it = pendingMoves.erase(it);
     } else {
@@ -156,10 +170,12 @@ void InotifyBackend::handleEvent(
   }
 
   for (auto it = set.begin(); it != set.end(); it++) {
+    //std::cout << "Handling event for " << event->name << " in watched dir " << (*it)->path << "\n";
     if (handleSubscription(event, now, *it)) {
       watchers.insert((*it)->watcher);
     }
   }
+  //std::cout << "Done handling event for " << event->name << "\n";
 }
 
 bool InotifyBackend::handleSubscription(
@@ -169,11 +185,33 @@ bool InotifyBackend::handleSubscription(
 ) {
   // Build full path and check if its in our ignore list.
   Watcher *watcher = sub->watcher;
+  //std::cout << "will build event path\n";
+  //std::cout << "Dir sub path : " << sub->path << "\n";
   std::string path = std::string(sub->path);
   bool isDir = event->mask & IN_ISDIR;
 
+  //std::cout << std::endl
+  //          << "Event { " << std::endl
+  //          << "wd: " << event->wd << std::endl
+  //          << "cookie: " << event->cookie << std::endl
+  //          << "type: " << (isDir ? "directory" : "file") << std::endl
+  //          << ", parent: " << path << std::endl
+  //          << ", name: " << event->name << std::endl
+  //          << ", len: " << event->len << std::endl
+  //          << ", create: " << (event->mask & IN_CREATE) << std::endl
+  //          << ", movedTo: " << (event->mask & IN_MOVED_TO) << std::endl
+  //          << ", modify: " << (event->mask & IN_MODIFY) << std::endl
+  //          << ", attrib: " << (event->mask & IN_ATTRIB) << std::endl
+  //          << ", delete: " << (event->mask & IN_DELETE) << std::endl
+  //          << ", deleteSelf: " << (event->mask & IN_DELETE_SELF) << std::endl
+  //          << ", movedFrom: " << (event->mask & IN_MOVED_FROM) << std::endl
+  //          << ", moveSelf: " << (event->mask & IN_MOVE_SELF) << std::endl
+  //          << " }"
+  //          << std::endl;
+
   if (event->len > 0) {
     path += "/" + std::string(event->name);
+    //std::cout << "built event path: " << path << "\n";
   }
 
   if (watcher->mIgnore.count(path) > 0) {
@@ -208,11 +246,14 @@ bool InotifyBackend::handleSubscription(
       pendingMoves.erase(found);
     } else {
       watcher->mEvents.create(path, isDir, ino);
+      // std::cout << "Event { create " << path << ", ino: " << ino << ", mtime: " << CONVERT_TIME(st.st_mtim) << " }" << std::endl;
     }
 
     if (entry->isDir) {
+      //std::cout << "Watching dir: " << entry->path << "\n";
       bool success = watchDir(*watcher, path, sub->tree);
       if (!success) {
+        //std::cout << "Removing dir watch: " << path << "\n";
         sub->tree->remove(path);
         return false;
       }
@@ -222,6 +263,7 @@ bool InotifyBackend::handleSubscription(
     int result = stat(path.c_str(), &st);
     ino_t ino = result != -1 ? st.st_ino : FAKE_INO;
     watcher->mEvents.update(path, ino);
+    // std::cout << "Event { update " << path << ", ino: " << ino << " }" << std::endl;
     sub->tree->update(path, ino, CONVERT_TIME(st.st_mtim));
   } else if (event->mask & (IN_DELETE | IN_DELETE_SELF | IN_MOVED_FROM | IN_MOVE_SELF)) {
     // Ignore delete/move self events unless this is the recursive watch root
@@ -234,20 +276,32 @@ bool InotifyBackend::handleSubscription(
     }
 
     // If the entry being deleted/moved is a directory, remove it from the list of subscriptions
+    //std::cout << "looking dir entry in tree for " << path << std::endl;
     if (isDir) {
+      //std::cout << "removing dir subs for "  << path << std::endl;
+      //for (auto it = mSubscriptions.begin(); it != mSubscriptions.end(); it++) {
+      //  std::cout << it->second->path << (it->second->path == path ? " (will be removed)" : "") << std::endl;
+      //}
+
       for (auto it = mSubscriptions.begin(); it != mSubscriptions.end();) {
+        //std::cout << "found dir sub for "  << path << std::endl;
         if (it->second->path == path) {
+          //std::cout << "Removing dir sub: " << it->second->path << "\n";
           it = mSubscriptions.erase(it);
+          //std::cout << "dir sub removed"  << std::endl;
         } else {
           ++it;
         }
       }
+      //std::cout << "done removing dir subs"  << std::endl;
     }
 
+    //std::cout << "Creating remove event : " << path << std::endl;
     DirEntry *entry = sub->tree->find(path);
     ino_t ino = entry ? entry->ino : FAKE_INO;
 
     watcher->mEvents.remove(path, isDir, ino);
+    //std::cout << "Removing path from tree : " << path << std::endl;
     sub->tree->remove(path);
   }
 

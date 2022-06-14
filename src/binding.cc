@@ -109,6 +109,7 @@ private:
   std::string eventType;
 
   void execute() override {
+    //std::cout << "running updateSnapshot" << std::endl;
     backend->updateSnapshot(*watcher, &snapshotPath, direntry, &eventType);
   }
 };
@@ -136,6 +137,7 @@ private:
   std::string snapshotPath;
 
   void execute() override {
+    //std::cout << "running getEventsSince" << std::endl;
     backend->getEventsSince(*watcher, &snapshotPath);
   }
 

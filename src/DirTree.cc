@@ -1,4 +1,5 @@
 #include "DirTree.hh"
+#include <iostream>
 
 static std::mutex mDirCacheMutex;
 static std::unordered_map<std::string, std::weak_ptr<DirTree>> dirTreeCache;
@@ -86,6 +87,7 @@ void DirTree::remove(std::string path) {
 
   // Remove all sub-entries if this is a directory
   if (recursiveRemove && found && found->isDir) {
+    //std::cout << "Removing children of " << path << " from tree" << std::endl;
     std::string pathStart = path + DIR_SEP;
     for (auto it = entries.begin(); it != entries.end();) {
       if (it->first.rfind(pathStart, 0) == 0) {
@@ -131,6 +133,8 @@ void DirTree::getChanges(DirTree *snapshot, EventList &events) {
   std::lock_guard<std::mutex> snapshotLock(snapshot->mMutex);
 
   for (auto it = entries.begin(); it != entries.end(); it++) {
+    //std::string type = it->second.isDir ? "dir" : "file";
+    //std::cout << "new tree entry: " << type << " " << it->second.path << ", ino: " << it->second.ino << std::endl;
     auto found = it->second.fileId != FAKE_FILEID ? snapshot->findByFileId(it->second.fileId) : snapshot->findByIno(it->second.ino);
     if (found) {
       if (found->path == it->second.path) {
@@ -166,6 +170,8 @@ void DirTree::getChanges(DirTree *snapshot, EventList &events) {
   }
 
   for (auto it = snapshot->entries.begin(); it != snapshot->entries.end(); it++) {
+    //std::string type = it->second.isDir ? "dir" : "file";
+    //std::cout << "snapshot entry: " << type << " " << it->second.path << ", ino: " << it->second.ino << std::endl;
     auto found = it->second.fileId != FAKE_FILEID ? snapshot->findByFileId(it->second.fileId) : snapshot->findByIno(it->second.ino);
     if (!found) {
       events.remove(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
