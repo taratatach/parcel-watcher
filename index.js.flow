@@ -21,7 +21,9 @@ export interface AsyncSubscription {
 }
 export interface Event {
   path: FilePath,
-  type: EventType
+  type: EventType,
+  ino: string,
+  fileId?: string,
 }
 declare module.exports: {
   getEventsSince(

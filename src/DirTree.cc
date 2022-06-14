@@ -48,10 +48,10 @@ DirEntry *DirTree::_find(std::string path) {
   return &found->second;
 }
 
-DirEntry *DirTree::add(std::string path, uint64_t mtime, bool isDir) {
+DirEntry *DirTree::add(std::string path, ino_t ino, uint64_t mtime, bool isDir, std::string fileId) {
   std::lock_guard<std::mutex> lock(mMutex);
 
-  DirEntry entry(path, mtime, isDir);
+  DirEntry entry(path, ino, mtime, isDir, fileId);
   auto it = entries.emplace(entry.path, entry);
   return &it.first->second;
 }
@@ -61,12 +61,19 @@ DirEntry *DirTree::find(std::string path) {
   return _find(path);
 }
 
-DirEntry *DirTree::update(std::string path, uint64_t mtime) {
+DirEntry *DirTree::update(std::string path, ino_t ino, uint64_t mtime, std::string fileId) {
   std::lock_guard<std::mutex> lock(mMutex);
 
   DirEntry *found = _find(path);
   if (found) {
     found->mtime = mtime;
+
+    if (ino != FAKE_INO) {
+      found->ino = ino;
+    }
+    if (fileId != FAKE_FILEID) {
+      found->fileId = fileId;
+    }
   }
 
   return found;
@@ -104,29 +111,31 @@ void DirTree::write(std::ostream &stream) {
 void DirTree::getChanges(DirTree *snapshot, EventList &events) {
   std::lock_guard<std::mutex> lock(mMutex);
   std::lock_guard<std::mutex> snapshotLock(snapshot->mMutex);
-  
+
   for (auto it = entries.begin(); it != entries.end(); it++) {
     auto found = snapshot->entries.find(it->first);
     if (found == snapshot->entries.end()) {
-      events.create(it->second.path);
+      events.create(it->second.path, it->second.ino, it->second.fileId);
     } else if (found->second.mtime != it->second.mtime && !found->second.isDir && !it->second.isDir) {
-      events.update(it->second.path);
+      events.update(it->second.path, it->second.ino, it->second.fileId);
     }
   }
 
   for (auto it = snapshot->entries.begin(); it != snapshot->entries.end(); it++) {
     size_t count = entries.count(it->first);
     if (count == 0) {
-      events.remove(it->second.path);
+      events.remove(it->second.path, it->second.ino, it->second.fileId);
     }
   }
 }
 
-DirEntry::DirEntry(std::string p, uint64_t t, bool d) {
+DirEntry::DirEntry(std::string p, ino_t i, uint64_t t, bool d, std::string f) {
   path = p;
+  ino = i;
   mtime = t;
   isDir = d;
   state = NULL;
+  fileId = f;
 }
 
 DirEntry::DirEntry(std::istream &stream) {
@@ -135,12 +144,14 @@ DirEntry::DirEntry(std::istream &stream) {
   if (stream >> size) {
     path.resize(size);
     if (stream.read(&path[0], size)) {
+      stream >> ino;
       stream >> mtime;
       stream >> isDir;
+      stream >> fileId;
     }
   }
 }
 
 void DirEntry::write(std::ostream &stream) const {
-  stream << path.size() << path << mtime << " " << isDir << "\n";
+  stream << path.size() << path << " " << ino << " " << mtime << " " << isDir << " " << fileId << "\n";
 }

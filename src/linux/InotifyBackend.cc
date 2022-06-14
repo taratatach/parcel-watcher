@@ -186,8 +186,10 @@ bool InotifyBackend::handleSubscription(
     struct stat st;
     // Use lstat to avoid resolving symbolic links that we cannot watch anyway
     // https://github.com/parcel-bundler/watcher/issues/76
-    lstat(path.c_str(), &st);
-    DirEntry *entry = sub->tree->add(path, CONVERT_TIME(st.st_mtim), S_ISDIR(st.st_mode));
+    int result = lstat(path.c_str(), &st);
+    ino_t ino = result != -1 ? st.st_ino : FAKE_INO;
+    DirEntry *entry = sub->tree->add(path, ino, CONVERT_TIME(st.st_mtim), S_ISDIR(st.st_mode));
+
     auto found = pendingMoves.find(event->cookie);
     if (found != pendingMoves.end()) {
       PendingMove pending = found->second;
@@ -202,10 +204,10 @@ bool InotifyBackend::handleSubscription(
         }
       }
 
-      watcher->mEvents.create(path);
+      watcher->mEvents.create(path, ino);
       pendingMoves.erase(found);
     } else {
-      watcher->mEvents.create(path);
+      watcher->mEvents.create(path, ino);
     }
 
     if (entry->isDir) {
@@ -216,11 +218,11 @@ bool InotifyBackend::handleSubscription(
       }
     }
   } else if (event->mask & (IN_MODIFY | IN_ATTRIB)) {
-    watcher->mEvents.update(path);
-
     struct stat st;
-    stat(path.c_str(), &st);
-    sub->tree->update(path, CONVERT_TIME(st.st_mtim));
+    int result = stat(path.c_str(), &st);
+    ino_t ino = result != -1 ? st.st_ino : FAKE_INO;
+    watcher->mEvents.update(path, ino);
+    sub->tree->update(path, ino, CONVERT_TIME(st.st_mtim));
   } else if (event->mask & (IN_DELETE | IN_DELETE_SELF | IN_MOVED_FROM | IN_MOVE_SELF)) {
     // Ignore delete/move self events unless this is the recursive watch root
     if ((event->mask & (IN_DELETE_SELF | IN_MOVE_SELF)) && path != watcher->mDir) {
@@ -242,7 +244,10 @@ bool InotifyBackend::handleSubscription(
       }
     }
 
-    watcher->mEvents.remove(path);
+    DirEntry *entry = sub->tree->find(path);
+    ino_t ino = entry ? entry->ino : FAKE_INO;
+
+    watcher->mEvents.remove(path, ino);
     sub->tree->remove(path);
   }
 
