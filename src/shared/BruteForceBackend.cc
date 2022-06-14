@@ -31,6 +31,27 @@ void BruteForceBackend::writeSnapshot(Watcher &watcher, std::string *snapshotPat
   tree->write(ofs);
 }
 
+void BruteForceBackend::updateSnapshot(Watcher &watcher, std::string *snapshotPath, std::shared_ptr<DirEntry> direntry, std::string *eventType) {
+  std::unique_lock<std::mutex> lock(mMutex);
+  auto tree = DirTree::getCached(watcher.mDir);
+
+  auto found = tree->entries.find(direntry->path);
+  if (*eventType == "create" || *eventType == "update") {
+    if (found == tree->entries.end()) {
+      tree->add(direntry->path, direntry->ino, direntry->mtime, direntry->isDir, direntry->fileId);
+    } else if (found->second.isDir == direntry->isDir) {
+      tree->update(direntry->path, direntry->ino, direntry->mtime, direntry->fileId);
+    } else {
+      tree->remove(direntry->path);
+      tree->add(direntry->path, direntry->ino, direntry->mtime, direntry->isDir, direntry->fileId);
+    }
+  } else if (*eventType == "delete") {
+    if (found != tree->entries.end()) {
+      tree->remove(direntry->path);
+    }
+  }
+}
+
 void BruteForceBackend::getEventsSince(Watcher &watcher, std::string *snapshotPath) {
   std::unique_lock<std::mutex> lock(mMutex);
   std::ifstream ifs(*snapshotPath);
