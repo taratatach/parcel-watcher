@@ -65,10 +65,10 @@ InotifyBackend::~InotifyBackend() {
 void InotifyBackend::subscribe(Watcher &watcher) {
   // Build a full directory tree recursively, and watch each directory.
   std::shared_ptr<DirTree> tree = getTree(watcher);
-  
+
   for (auto it = tree->entries.begin(); it != tree->entries.end(); it++) {
     if (it->second.isDir) {
-      bool success = watchDir(watcher, (DirEntry *)&it->second, tree);
+      bool success = watchDir(watcher, it->second.path, tree);
       if (!success) {
         throw WatcherError(std::string("inotify_add_watch on '") + it->second.path + std::string("' failed: ") + strerror(errno), &watcher);
       }
@@ -76,15 +76,15 @@ void InotifyBackend::subscribe(Watcher &watcher) {
   }
 }
 
-bool InotifyBackend::watchDir(Watcher &watcher, DirEntry *entry, std::shared_ptr<DirTree> tree) {
-  int wd = inotify_add_watch(mInotify, entry->path.c_str(), INOTIFY_MASK);
+bool InotifyBackend::watchDir(Watcher &watcher, std::string path, std::shared_ptr<DirTree> tree) {
+  int wd = inotify_add_watch(mInotify, path.c_str(), INOTIFY_MASK);
   if (wd == -1) {
     return false;
   }
 
   std::shared_ptr<InotifySubscription> sub = std::make_shared<InotifySubscription>();
   sub->tree = tree;
-  sub->entry = entry;
+  sub->path = path;
   sub->watcher = &watcher;
   mSubscriptions.emplace(wd, sub);
 
@@ -149,8 +149,10 @@ void InotifyBackend::handleEvent(struct inotify_event *event, std::unordered_set
 bool InotifyBackend::handleSubscription(struct inotify_event *event, std::shared_ptr<InotifySubscription> sub) {
   // Build full path and check if its in our ignore list.
   Watcher *watcher = sub->watcher;
-  std::string path = std::string(sub->entry->path);
-  if (event->len > 0) { 
+  std::string path = std::string(sub->path);
+  bool isDir = event->mask & IN_ISDIR;
+
+  if (event->len > 0) {
     path += "/" + std::string(event->name);
   }
 
@@ -170,7 +172,7 @@ bool InotifyBackend::handleSubscription(struct inotify_event *event, std::shared
     DirEntry *entry = sub->tree->add(path, CONVERT_TIME(st.st_mtim), S_ISDIR(st.st_mode));
 
     if (entry->isDir) {
-      bool success = watchDir(*watcher, entry, sub->tree);
+      bool success = watchDir(*watcher, path, sub->tree);
       if (!success) {
         sub->tree->remove(path);
         return false;
@@ -189,12 +191,12 @@ bool InotifyBackend::handleSubscription(struct inotify_event *event, std::shared
     }
 
     // If the entry being deleted/moved is a directory, remove it from the list of subscriptions
-    auto entry = sub->tree->find(path);
-    if (entry && entry->isDir) {
-      for (auto it = mSubscriptions.begin(); it != mSubscriptions.end(); it++) {
-        if (it->second->entry == &*entry) {
-          mSubscriptions.erase(it);
-          break;
+    if (isDir) {
+      for (auto it = mSubscriptions.begin(); it != mSubscriptions.end();) {
+        if (it->second->path == path) {
+          it = mSubscriptions.erase(it);
+        } else {
+          ++it;
         }
       }
     }
