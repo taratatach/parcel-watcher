@@ -93,17 +93,17 @@ void FSEventsCallback(
 
     // Handle unambiguous events first
     if (isCreated && !(isRemoved || isModified || isRenamed)) {
-      state->tree->add(paths[i], 0, isDir);
-      list->create(paths[i]);
+      state->tree->add(paths[i], FAKE_INO, 0, isDir);
+      list->create(paths[i], FAKE_INO);
     } else if (isRemoved && !(isCreated || isModified || isRenamed)) {
       state->tree->remove(paths[i]);
-      list->remove(paths[i]);
+      list->remove(paths[i], FAKE_INO);
       if (paths[i] == watcher->mDir) {
         deletedRoot = true;
       }
     } else if (isModified && !(isCreated || isRemoved || isRenamed)) {
-      state->tree->update(paths[i], 0);
-      list->update(paths[i]);
+      state->tree->update(paths[i], FAKE_INO, 0);
+      list->update(paths[i], FAKE_INO);
     } else {
       // If multiple flags were set, then we need to call `stat` to determine if the file really exists.
       // This helps disambiguate creates, updates, and deletes.
@@ -115,7 +115,7 @@ void FSEventsCallback(
         // we'd rather ignore this event completely). This will result in some extra delete events
         // being emitted for files we don't know about, but that is the best we can do.
         state->tree->remove(paths[i]);
-        list->remove(paths[i]);
+        list->remove(paths[i], FAKE_INO);
         if (paths[i] == watcher->mDir) {
           deletedRoot = true;
         }
@@ -127,11 +127,11 @@ void FSEventsCallback(
       uint64_t mtime = CONVERT_TIME(file.st_mtimespec);
       auto existed = !since && state->tree->find(paths[i]);
       if (isModified && (existed || ctime <= since)) {
-        state->tree->update(paths[i], mtime);
-        list->update(paths[i]);
+        state->tree->update(paths[i], FAKE_INO, mtime);
+        list->update(paths[i], FAKE_INO);
       } else {
-        state->tree->add(paths[i], mtime, S_ISDIR(file.st_mode));
-        list->create(paths[i]);
+        state->tree->add(paths[i], FAKE_INO, mtime, S_ISDIR(file.st_mode));
+        list->create(paths[i], FAKE_INO);
       }
     }
   }
