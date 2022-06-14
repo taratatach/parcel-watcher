@@ -14,6 +14,7 @@
 
 #include "Backend.hh"
 #include <unordered_map>
+#include <iostream>
 
 static std::unordered_map<std::string, std::shared_ptr<Backend>> sharedBackends;
 
@@ -113,6 +114,7 @@ void Backend::watch(Watcher &watcher) {
   if (res == mSubscriptions.end()) {
     try {
       this->subscribe(watcher);
+      //std::cout << "Watching " << watcher.mDir << "\n";
       mSubscriptions.insert(&watcher);
     } catch (std::exception &err) {
       unref();
@@ -122,6 +124,7 @@ void Backend::watch(Watcher &watcher) {
 }
 
 void Backend::unwatch(Watcher &watcher) {
+  //std::cout << "Unwatching " << watcher.mDir << "\n";
   std::unique_lock<std::mutex> lock(mMutex);
   size_t deleted = mSubscriptions.erase(&watcher);
   if (deleted > 0) {

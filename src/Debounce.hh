@@ -4,6 +4,7 @@
 #include <thread>
 #include <unordered_map>
 #include "Signal.hh"
+#include <iostream>
 
 class Debounce {
 public:

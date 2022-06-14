@@ -1,4 +1,5 @@
 #include "DirTree.hh"
+#include <iostream>
 
 static std::mutex mDirCacheMutex;
 static std::unordered_map<std::string, std::weak_ptr<DirTree>> dirTreeCache;
@@ -91,6 +92,7 @@ void DirTree::remove(std::string path) {
 
   // Remove all sub-entries if this is a directory
   if (recursiveRemove && found && found->isDir) {
+    //std::cout << "Removing children of " << path << " from tree" << std::endl;
     std::string pathStart = path + DIR_SEP;
     for (auto it = entries.begin(); it != entries.end();) {
       if (it->first.rfind(pathStart, 0) == 0) {
@@ -136,13 +138,17 @@ void DirTree::getChanges(DirTree *snapshot, EventList &events) {
   std::lock_guard<std::mutex> snapshotLock(snapshot->mMutex);
 
   for (auto it = entries.begin(); it != entries.end(); it++) {
+    //std::string type = it->second.isDir ? "dir" : "file";
+    //std::cout << "new tree entry: " << type << " " << it->second.path << ", ino: " << it->second.ino << ", fileId: " << it->second.fileId << std::endl;
     auto found = it->second.fileId != FAKE_FILEID ? snapshot->findByFileId(it->second.fileId) : snapshot->findByIno(it->second.ino);
     if (found) {
       bool sameType = found->isDir == it->second.isDir;
       bool samePath = found->path == it->second.path;
       bool sameMtime = found->mtime == it->second.mtime;
       bool isFile = !found->isDir;
+      //std::cout << "found matching entry in snapshot: " << found->path << std::endl;
       if (!sameType) {
+        //std::cout << "matching entry was replaced with other doc type" << std::endl;
         events.remove(found->path, found->isDir, found->ino, found->fileId);
         events.create(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
       } else if (!samePath) {
@@ -150,10 +156,14 @@ void DirTree::getChanges(DirTree *snapshot, EventList &events) {
         // a fake "create" event for the rename source.
         events.create(found->path, found->isDir, found->ino, found->fileId);
         events.rename(found->path, it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
+        //std::cout << found->path << "->" << it->second.path << std::endl;
 
         if (found->isDir) {
+          //std::cout << "matching entry is a directory; renaming children" << std::endl;
           std::string pathStart = found->path + DIR_SEP;
+          //std::cout << "Looking for entries starting with " << pathStart << std::endl;
           for (auto snap = snapshot->entries.begin(); snap != snapshot->entries.end(); snap++) {
+            //std::cout << "child snap entry: " << (snap->second.isDir ? "dir" : "file") << " " << snap->second.path << std::endl;
             if (snap->first.rfind(pathStart.c_str(), 0) == 0) {
               std::string newPath = snap->second.path.replace(0, found->path.length(), it->second.path);
               DirEntry entry(newPath, snap->second.ino, snap->second.mtime, snap->second.isDir, snap->second.fileId);
@@ -163,6 +173,7 @@ void DirTree::getChanges(DirTree *snapshot, EventList &events) {
           }
         }
       } else if (isFile && !sameMtime) {
+        //std::cout << "matching entry is a modified file" << std::endl;
         events.update(it->second.path, it->second.ino, it->second.fileId);
       }
     } else {
@@ -176,6 +187,8 @@ void DirTree::getChanges(DirTree *snapshot, EventList &events) {
   }
 
   for (auto it = snapshot->entries.begin(); it != snapshot->entries.end(); it++) {
+    //std::string type = it->second.isDir ? "dir" : "file";
+    //std::cout << "snapshot entry: " << type << " " << it->second.path << ", ino: " << it->second.ino << ", fileId: " << it->second.fileId << std::endl;
     auto found = it->second.fileId != FAKE_FILEID ? findByFileId(it->second.fileId) : findByIno(it->second.ino);
     if (!found) {
       events.remove(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
