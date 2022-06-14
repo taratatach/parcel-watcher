@@ -136,6 +136,50 @@ describe('watcher', () => {
           let res = await nextEvent();
           assert.deepEqual(res, [{type: 'delete', path: f}]);
         });
+
+        it('should store UTF-8 paths properly in the tree', async () => {
+          let f = path.join(tmpDir, 'spécial');
+          fs.writeFile(f, 'hello');
+
+          async function listen(dir) {
+            let cbs = [];
+            let nextEvent = () => {
+              return new Promise((resolve) => {
+                cbs.push(resolve);
+              });
+            };
+
+            let fn = (err, events) => {
+              if (err) {
+                throw err;
+              }
+
+              setImmediate(() => {
+                for (let cb of cbs) {
+                  cb(events);
+                }
+
+                cbs = [];
+              });
+            };
+            let sub = await watcher.subscribe(dir, fn, {backend});
+
+            return [nextEvent, sub];
+          };
+
+          let [nextEvent, sub] = await listen(tmpDir);
+
+          await fs.remove(f);
+
+          try {
+            // XXX: no events emitted if non-ascii characters are not handled
+            // properly in BruteForceBackend::readTree on Windows.
+            let res = await nextEvent();
+            assert.deepEqual(res, [{type: 'delete', path: f}]);
+          } finally {
+            await sub.unsubscribe();
+          }
+        });
       });
 
       describe('directories', () => {
