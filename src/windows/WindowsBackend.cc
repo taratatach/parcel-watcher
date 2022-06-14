@@ -41,7 +41,9 @@ void BruteForceBackend::readTree(Watcher &watcher, std::shared_ptr<DirTree> tree
           continue;
         }
 
-        tree->add(fullPath, CONVERT_TIME(ffd.ftLastWriteTime), ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
+        std::string fileId = getFileId(fullPath);
+
+        tree->add(fullPath, FAKE_INO, CONVERT_TIME(ffd.ftLastWriteTime), ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY, fileId);
         if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
           directories.push(fullPath);
         }
@@ -190,7 +192,7 @@ public:
         DWORD attrs = GetFileAttributesW(extendedWidePath(mWatcher->mDir).data());
         bool isDir = attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
         if (!isDir) {
-          mWatcher->mEvents.remove(mWatcher->mDir);
+          mWatcher->mEvents.remove(mWatcher->mDir, FAKE_INO);
           mTree->remove(mWatcher->mDir);
           mWatcher->notify();
           stop();
@@ -258,21 +260,22 @@ public:
               }
             }
 
-            mWatcher->mEvents.create(path);
+            mWatcher->mEvents.create(path, FAKE_INO, fileId);
             pendingMoves.erase(found);
           } else {
-            mWatcher->mEvents.create(path);
+            mWatcher->mEvents.create(path, FAKE_INO, fileId);
           }
-          mTree->add(path, CONVERT_TIME(data.ftLastWriteTime), isDir);
+          mTree->add(path, FAKE_INO, CONVERT_TIME(data.ftLastWriteTime), isDir, fileId);
         }
         break;
       }
       case FILE_ACTION_MODIFIED: {
         WIN32_FILE_ATTRIBUTE_DATA data;
         if (GetFileAttributesExW(extendedWidePath(path).data(), GetFileExInfoStandard, &data)) {
-          mTree->update(path, CONVERT_TIME(data.ftLastWriteTime));
+          std::string fileId = getFileId(path);
+          mTree->update(path, FAKE_INO, CONVERT_TIME(data.ftLastWriteTime), fileId);
           if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            mWatcher->mEvents.update(path);
+            mWatcher->mEvents.update(path, FAKE_INO, fileId);
           }
         }
         break;
@@ -282,7 +285,7 @@ public:
         DirEntry *entry = mTree->find(path);
         if (entry) {
           pendingMoves.emplace(entry->fileId, PendingMove(now, path));
-          mWatcher->mEvents.remove(path);
+          mWatcher->mEvents.remove(path, entry->ino, entry->fileId);
           mTree->remove(path);
         }
         break;

@@ -57,7 +57,7 @@ std::string getFileId(std::string path) {
     FILE_FLAG_BACKUP_SEMANTICS; // allow opening directories
 
   hFind = CreateFileW(
-    utf8ToUtf16(path).data(), // path of of file to open
+    extendedWidePath(path).data(), // path of of file to open
     0, // only allow querying metadata
     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, // allow other processes to read or write to the file but not delete or rename it
     NULL, // no specific security attributes
@@ -66,14 +66,14 @@ std::string getFileId(std::string path) {
     NULL // no template since reading only
   );
   if (hFind == INVALID_HANDLE_VALUE) {
-    throw std::runtime_error("Error opening document to read info");
+    throw std::runtime_error("Error opening " + path + " to read info");
   }
 
   BY_HANDLE_FILE_INFORMATION fileInfo;
   bool success = GetFileInformationByHandle(hFind, &fileInfo);
   if (!success) {
     CloseHandle(hFind);
-    throw std::runtime_error("Error getting file information");
+    throw std::runtime_error("Error getting " + path + " information");
   }
   // No need to keep the handle active anymore
   CloseHandle(hFind);
