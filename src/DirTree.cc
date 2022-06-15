@@ -117,19 +117,19 @@ void DirTree::getChanges(DirTree *snapshot, EventList &events) {
   std::lock_guard<std::mutex> lock(mMutex);
   std::lock_guard<std::mutex> snapshotLock(snapshot->mMutex);
 
+  for (auto it = snapshot->entries.begin(); it != snapshot->entries.end(); it++) {
+    size_t count = entries.count(it->first);
+    if (count == 0) {
+      events.remove(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
+    }
+  }
+
   for (auto it = entries.begin(); it != entries.end(); it++) {
     auto found = snapshot->entries.find(it->first);
     if (found == snapshot->entries.end()) {
       events.create(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
     } else if (found->second.mtime != it->second.mtime && !found->second.isDir && !it->second.isDir) {
       events.update(it->second.path, it->second.ino, it->second.fileId);
-    }
-  }
-
-  for (auto it = snapshot->entries.begin(); it != snapshot->entries.end(); it++) {
-    size_t count = entries.count(it->first);
-    if (count == 0) {
-      events.remove(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
     }
   }
 }

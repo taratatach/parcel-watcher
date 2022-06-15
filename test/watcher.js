@@ -141,8 +141,8 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'create', path: f2, kind, ino},
             {type: 'delete', path: f1, kind, ino},
+            {type: 'create', path: f2, kind, ino},
           ]);
         });
 
@@ -192,8 +192,8 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'create', path: f2, kind, ino},
             {type: 'delete', path: dirToRename, kind, ino},
+            {type: 'create', path: f2, kind, ino},
           ]);
         });
 
@@ -355,8 +355,8 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: f1, kind: f1Kind, ino: f1Ino},
             {type: 'delete', path: f2, kind: f2Kind, ino: f2Ino},
+            {type: 'delete', path: f1, kind: f1Kind, ino: f1Ino},
           ]);
         });
 

@@ -65,7 +65,7 @@ public:
     Event *event = internalUpdate(path, isDir, ino, fileId);
     if (event->isCreated) {
       // Ignore event when rapidly created and removed
-      mEvents.erase(path);
+      erase(path);
     } else {
       event->isDeleted = true;
     }
@@ -79,8 +79,8 @@ public:
   std::vector<Event> getEvents() {
     std::lock_guard<std::mutex> l(mMutex);
     std::vector<Event> eventsCloneVector;
-    for(auto it = mEvents.begin(); it != mEvents.end(); ++it) {
-      eventsCloneVector.push_back(it->second);
+    for(auto event : mEvents) {
+      eventsCloneVector.push_back(event);
     }
     return eventsCloneVector;
   }
@@ -92,24 +92,41 @@ public:
 
 private:
   mutable std::mutex mMutex;
-  std::map<std::string, Event> mEvents;
+  std::vector<Event> mEvents;
   Event *internalUpdate(std::string path, bool isDir, ino_t ino = FAKE_INO, std::string fileId = FAKE_FILEID) {
-    auto found = mEvents.find(path);
-    if (found == mEvents.end()) {
-      auto it = mEvents.emplace(path, Event(path, isDir, ino, fileId));
-      return &it.first->second;
-    }
+    Event *event;
 
-    Event *event = &found->second;
-    if (ino != FAKE_INO) {
-      event->ino = ino;
-    }
-    if (fileId != FAKE_FILEID) {
-      event->fileId = fileId;
+    event = find(path);
+    if (!event) {
+      mEvents.push_back(Event(path, isDir, ino, fileId));
+      event = &(mEvents.back());
+    } else {
+      if (ino != FAKE_INO) {
+        event->ino = ino;
+      }
+      if (fileId != FAKE_FILEID) {
+       event->fileId = fileId;
+      }
     }
     event->isDir = isDir;
 
     return event;
+  }
+  Event *find(std::string path) {
+    for(unsigned i=0; i<mEvents.size(); i++) {
+      if (mEvents.at(i).path == path) {
+        return &(mEvents.at(i));
+      }
+    }
+    return nullptr;
+  }
+  void erase(std::string path) {
+    for(auto it = mEvents.begin(); it != mEvents.end(); ++it) {
+      if (it->path == path) {
+        mEvents.erase(it);
+        return;
+      }
+    }
   }
 };
 
