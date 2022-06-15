@@ -204,7 +204,7 @@ bool InotifyBackend::handleSubscription(
         }
       }
 
-      watcher->mEvents.create(path, isDir, ino);
+      watcher->mEvents.rename(pending.path, path, isDir, ino);
       pendingMoves.erase(found);
     } else {
       watcher->mEvents.create(path, isDir, ino);

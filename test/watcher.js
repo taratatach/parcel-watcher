@@ -113,8 +113,7 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: f1, kind, ino},
-            {type: 'create', path: f2, kind, ino},
+            {type: 'rename', oldPath: f1, path: f2, kind, ino},
           ]);
         });
 
@@ -125,8 +124,7 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: fileToRename, kind, ino},
-            {type: 'create', path: f2, kind, ino},
+            {type: 'rename', oldPath: fileToRename, path: f2, kind, ino},
           ]);
         });
 
@@ -141,8 +139,7 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: f1, kind, ino},
-            {type: 'create', path: f2, kind, ino},
+            {type: 'rename', oldPath: f1, path: f2, kind, ino},
           ]);
         });
 
@@ -180,8 +177,7 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: f1, kind, ino},
-            {type: 'create', path: f2, kind, ino},
+            {type: 'rename', oldPath: f1, path: f2, kind, ino},
           ]);
         });
 
@@ -192,8 +188,7 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: dirToRename, kind, ino},
-            {type: 'create', path: f2, kind, ino},
+            {type: 'rename', oldPath: dirToRename, path: f2, kind, ino},
           ]);
         });
 
@@ -286,8 +281,7 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: f2, kind, ino},
-            {type: 'create', path: f3, kind, ino},
+            {type: 'rename', oldPath: f2, path: f3, kind, ino},
           ]);
         });
 
@@ -335,8 +329,7 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: f2, kind, ino},
-            {type: 'create', path: f3, kind, ino},
+            {type: 'rename', oldPath: f2, path: f3, kind, ino},
           ]);
         });
 
@@ -379,10 +372,8 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: getPath('dir'), ino: dirIno, kind: dirKind},
-            {type: 'create', path: getPath('dir2'), ino: dirIno, kind: dirKind},
-            {type: 'delete', path: getPath('dir2/subdir'), kind: subdirKind},
-            {type: 'create', path: getPath('dir2/subdir2'), ino: subdirIno, kind: subdirKind},
+            {type: 'rename', oldPath: getPath('dir'), path: getPath('dir2'), ino: dirIno, kind: dirKind},
+            {type: 'rename', oldPath: getPath('dir2/subdir'), path: getPath('dir2/subdir2'), ino: subdirIno, kind: subdirKind},
           ]);
         });
       });
@@ -432,8 +423,7 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'delete', path: f2, kind, ino},
-            {type: 'create', path: f3, kind, ino},
+            {type: 'rename', oldPath: f2, path: f3, kind, ino},
           ]);
         });
 
@@ -534,12 +524,14 @@ describe('watcher', () => {
             let f4 = getFilename();
             await fs.writeFile(f1, 'hello world');
             let { ino, kind } = await getMetadata(f1);
+            await nextEvent();
+
             await fs.rename(f1, f2);
             await fs.rename(f2, f3);
             await fs.rename(f3, f4);
 
             let res = await nextEvent();
-            assert.deepEqual(res, [{type: 'create', path: f4, kind, ino}]);
+            assert.deepEqual(res, [{type: 'rename', oldPath: f1, path: f4, kind, ino}]);
           });
         }
 

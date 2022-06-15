@@ -260,7 +260,7 @@ public:
               }
             }
 
-            mWatcher->mEvents.create(path, isDir, FAKE_INO, fileId);
+            mWatcher->mEvents.rename(pending.path, path, isDir, FAKE_INO, fileId);
             pendingMoves.erase(found);
           } else {
             mWatcher->mEvents.create(path, isDir, FAKE_INO, fileId);
