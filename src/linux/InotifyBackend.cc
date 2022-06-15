@@ -204,10 +204,10 @@ bool InotifyBackend::handleSubscription(
         }
       }
 
-      watcher->mEvents.create(path, ino);
+      watcher->mEvents.create(path, isDir, ino);
       pendingMoves.erase(found);
     } else {
-      watcher->mEvents.create(path, ino);
+      watcher->mEvents.create(path, isDir, ino);
     }
 
     if (entry->isDir) {
@@ -249,7 +249,7 @@ bool InotifyBackend::handleSubscription(
     DirEntry *entry = sub->tree->find(path);
     ino_t ino = entry ? entry->ino : FAKE_INO;
 
-    watcher->mEvents.remove(path, ino);
+    watcher->mEvents.remove(path, isDir || isSelfEvent, ino);
     sub->tree->remove(path);
   }
 
