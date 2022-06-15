@@ -27,7 +27,7 @@ public:
     throw "Brute force backend doesn't support subscriptions.";
   }
 
-  std::shared_ptr<DirTree> getTree(Watcher &watcher, bool shouldRead = true);
+  std::shared_ptr<DirTree> getTree(Watcher &watcher, bool shouldRead = true, bool recursiveRemove = true);
 private:
   void readTree(Watcher &watcher, std::shared_ptr<DirTree> tree);
 };
