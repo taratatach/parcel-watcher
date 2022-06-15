@@ -192,7 +192,7 @@ public:
         DWORD attrs = GetFileAttributesW(utf8ToUtf16(mWatcher->mDir).data());
         bool isDir = attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
         if (!isDir) {
-          mWatcher->mEvents.remove(mWatcher->mDir, FAKE_INO);
+          mWatcher->mEvents.remove(mWatcher->mDir, isDir, FAKE_INO);
           mTree->remove(mWatcher->mDir);
           mWatcher->notify();
           stop();
@@ -260,10 +260,10 @@ public:
               }
             }
 
-            mWatcher->mEvents.create(path, FAKE_INO, fileId);
+            mWatcher->mEvents.create(path, isDir, FAKE_INO, fileId);
             pendingMoves.erase(found);
           } else {
-            mWatcher->mEvents.create(path, FAKE_INO, fileId);
+            mWatcher->mEvents.create(path, isDir, FAKE_INO, fileId);
           }
           mTree->add(path, FAKE_INO, CONVERT_TIME(data.ftLastWriteTime), isDir, fileId);
         }
@@ -272,9 +272,10 @@ public:
       case FILE_ACTION_MODIFIED: {
         WIN32_FILE_ATTRIBUTE_DATA data;
         if (GetFileAttributesExW(utf8ToUtf16(path).data(), GetFileExInfoStandard, &data)) {
+          bool isDir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
           std::string fileId = getFileId(path);
           mTree->update(path, FAKE_INO, CONVERT_TIME(data.ftLastWriteTime), fileId);
-          if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+          if (!isDir) {
             mWatcher->mEvents.update(path, FAKE_INO, fileId);
           }
         }
@@ -285,7 +286,7 @@ public:
         DirEntry *entry = mTree->find(path);
         if (entry) {
           pendingMoves.emplace(entry->fileId, PendingMove(now, path));
-          mWatcher->mEvents.remove(path, entry->ino, entry->fileId);
+          mWatcher->mEvents.remove(path, entry->isDir, entry->ino, entry->fileId);
           mTree->remove(path);
         }
         break;
