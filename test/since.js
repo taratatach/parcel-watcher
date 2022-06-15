@@ -105,8 +105,7 @@ describe('since', () => {
             backend,
           });
           assert.deepEqual(res, [
-            {type: 'delete', path: f1, kind, ino},
-            {type: 'create', path: f2, kind, ino},
+            {type: 'rename', oldPath: f1, path: f2, kind, ino},
           ]);
         });
 
@@ -157,8 +156,7 @@ describe('since', () => {
           });
 
           assert.deepEqual(res, [
-            {type: 'delete', path: f1, kind, ino},
-            {type: 'create', path: f2, kind, ino},
+            {type: 'rename', oldPath: f1, path: f2, kind, ino},
           ]);
         });
 
@@ -236,8 +234,7 @@ describe('since', () => {
             backend,
           });
           assert.deepEqual(res, [
-            {type: 'delete', path: f2, kind, ino},
-            {type: 'create', path: f3, kind, ino},
+            {type: 'rename', oldPath: f2, path: f3, kind, ino},
           ]);
         });
 
@@ -295,8 +292,7 @@ describe('since', () => {
             backend,
           });
           assert.deepEqual(res, [
-            {type: 'delete', path: f2, kind, ino},
-            {type: 'create', path: f3, kind, ino},
+            {type: 'rename', oldPath: f2, path: f3, kind, ino},
           ]);
         });
 
@@ -385,8 +381,7 @@ describe('since', () => {
             backend,
           });
           assert.deepEqual(res, [
-            {type: 'delete', path: f2, kind, ino},
-            {type: 'create', path: f3, kind, ino},
+            {type: 'rename', oldPath: f2, path: f3, kind, ino},
           ]);
         });
 
