@@ -108,22 +108,66 @@ void DirTree::write(std::ostream &stream) {
   }
 }
 
+DirEntry *DirTree::findByIno(ino_t ino) {
+  for (auto it = entries.begin(); it != entries.end(); it++) {
+    if (it->second.ino == ino) {
+      return &(it->second);
+    }
+  }
+  return nullptr;
+}
+
+DirEntry *DirTree::findByFileId(std::string fileId) {
+  for (auto it = entries.begin(); it != entries.end(); it++) {
+    if (it->second.fileId == fileId) {
+      return &(it->second);
+    }
+  }
+  return nullptr;
+}
+
 void DirTree::getChanges(DirTree *snapshot, EventList &events) {
   std::lock_guard<std::mutex> lock(mMutex);
   std::lock_guard<std::mutex> snapshotLock(snapshot->mMutex);
 
   for (auto it = entries.begin(); it != entries.end(); it++) {
-    auto found = snapshot->entries.find(it->first);
-    if (found == snapshot->entries.end()) {
-      events.create(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
-    } else if (found->second.mtime != it->second.mtime && !found->second.isDir && !it->second.isDir) {
-      events.update(it->second.path, it->second.ino, it->second.fileId);
+    auto found = it->second.fileId != FAKE_FILEID ? snapshot->findByFileId(it->second.fileId) : snapshot->findByIno(it->second.ino);
+    if (found) {
+      if (found->path == it->second.path) {
+        if(found->mtime != it->second.mtime && !found->isDir && !it->second.isDir) {
+          events.update(it->second.path, it->second.ino, it->second.fileId);
+        }
+      } else if (found->isDir == it->second.isDir) {
+        events.rename(found->path, it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
+
+        if (found->isDir) {
+          std::string pathStart = found->path + DIR_SEP;
+          for (auto snap = snapshot->entries.begin(); snap != snapshot->entries.end(); snap++) {
+            if (snap->first.rfind(pathStart.c_str(), 0) == 0) {
+              std::string newPath = snap->second.path.replace(0, found->path.length(), it->second.path);
+              DirEntry entry(newPath, snap->second.ino, snap->second.mtime, snap->second.isDir, snap->second.fileId);
+              snapshot->entries.emplace(entry.path, entry);
+              it = snapshot->entries.erase(snap);
+            }
+          }
+        }
+      } else {
+        events.remove(found->path, found->isDir, found->ino, found->fileId);
+        events.create(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
+      }
+    } else {
+      auto found = snapshot->entries.find(it->first);
+      if (found == snapshot->entries.end()) {
+        events.create(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
+      } else if (found->second.mtime != it->second.mtime && !found->second.isDir && !it->second.isDir) {
+        events.update(it->second.path, it->second.ino, it->second.fileId);
+      }
     }
   }
 
   for (auto it = snapshot->entries.begin(); it != snapshot->entries.end(); it++) {
-    size_t count = entries.count(it->first);
-    if (count == 0) {
+    auto found = it->second.fileId != FAKE_FILEID ? snapshot->findByFileId(it->second.fileId) : snapshot->findByIno(it->second.ino);
+    if (!found) {
       events.remove(it->second.path, it->second.isDir, it->second.ino, it->second.fileId);
     }
   }
