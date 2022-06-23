@@ -120,9 +120,8 @@ public:
         // Assume update of overwritten doc
         event->isDeleted = false;
       } else {
-        event->isCreated = false;
+        event->isCreated = true;
       }
-      event->oldPath = oldPath;
     }
   }
 
