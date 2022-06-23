@@ -761,7 +761,12 @@ describe('watcher', () => {
           );
         });
 
-        execSync('watchman shutdown-server');
+        try {
+          execSync('watchman shutdown-server');
+        } catch (err) {
+          // XXX: watchman is not available
+          if (err) return;
+        }
 
         let err = await p;
         assert(err, 'No error was emitted');
