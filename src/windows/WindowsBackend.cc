@@ -260,7 +260,7 @@ public:
               }
             }
 
-            mWatcher->mEvents.create(path, isDir, FAKE_INO, fileId);
+            mWatcher->mEvents.rename(pending.path, path, isDir, FAKE_INO, fileId);
             pendingMoves.erase(found);
           } else {
             mWatcher->mEvents.create(path, isDir, FAKE_INO, fileId);
@@ -308,7 +308,7 @@ private:
 // This function is called by Backend::watch which takes a lock on mMutex
 void WindowsBackend::subscribe(Watcher &watcher) {
   // Create a subscription for this watcher
-  Subscription *sub = new Subscription(this, &watcher, getTree(watcher, false));
+  Subscription *sub = new Subscription(this, &watcher, getTree(watcher, false, false));
   watcher.state = (void *)sub;
 
   // Queue polling for this subscription in the correct thread.
