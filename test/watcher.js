@@ -138,10 +138,16 @@ describe('watcher', () => {
           await fs.rename(f1, f2);
 
           let res = await nextEvent();
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f1, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f2, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f1, path: f2, kind, ino, fileId}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f1, kind, fileId}, {backend}),
+              event({type: 'create', path: f2, kind, fileId}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when an existing file is renamed', async () => {
@@ -159,10 +165,16 @@ describe('watcher', () => {
               event({type: 'create', path: f2, ino, fileId, kind}, {backend}),
             ]);
           } else {
-            assert.deepEqual(res, [
-              event({type: 'delete', path: fileToRename, kind}, {backend}),
-              event({type: 'create', path: f2, ino, fileId, kind}, {backend}),
-            ]);
+            if (backend === 'inotify') {
+              assert.deepEqual(res, [
+                event({type: 'rename', oldPath: fileToRename, path: f2, kind, ino}, {backend}),
+              ]);
+            } else {
+              assert.deepEqual(res, [
+                event({type: 'delete', path: fileToRename, kind, ino}, {backend}),
+                event({type: 'create', path: f2, kind, ino}, {backend}),
+              ]);
+            }
           }
         });
 
@@ -176,10 +188,16 @@ describe('watcher', () => {
           await fs.rename(f1, f2);
 
           let res = await nextEvent();
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f1, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f2, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f1, path: f2, kind, ino, fileId}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f1, kind, fileId}, {backend}),
+              event({type: 'create', path: f2, kind, fileId}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when a file is deleted', async () => {
@@ -215,10 +233,16 @@ describe('watcher', () => {
           await fs.rename(f1, f2);
 
           let res = await nextEvent();
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f1, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f2, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f1, path: f2, kind, ino, fileId}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f1, kind, fileId}, {backend}),
+              event({type: 'create', path: f2, kind, fileId}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when an existing directory is renamed', async () => {
@@ -236,11 +260,8 @@ describe('watcher', () => {
               event({type: 'create', path: f2, fileId, kind}, {backend}),
             ]);
           } else if (backend === 'inotify') {
-            // The InotifyBackend cannot give us the deleted dir inode but can
-            // tell us the event is for a directory.
             assert.deepEqual(res, [
-              event({type: 'delete', path: dirToRename, kind}, {backend}),
-              event({type: 'create', path: f2, ino, kind}, {backend}),
+              event({type: 'rename', oldPath: dirToRename, path: f2, kind, ino}, {backend}),
             ]);
           } else {
             assert.deepEqual(res, [
@@ -337,10 +358,16 @@ describe('watcher', () => {
           await fs.rename(f2, f3);
 
           let res = await nextEvent();
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f2, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f3, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f2, path: f3, kind, ino, fileId}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f2, kind, fileId}, {backend}),
+              event({type: 'create', path: f3, kind, fileId}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when a sub-file is deleted', async () => {
@@ -386,10 +413,16 @@ describe('watcher', () => {
           await fs.rename(f2, f3);
 
           let res = await nextEvent();
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f2, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f3, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f2, path: f3, kind, ino, fileId}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f2,  kind, fileId}, {backend}),
+              event({type: 'create', path: f3,  kind, fileId}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when a sub-directory is deleted with files inside', async () => {
@@ -450,6 +483,11 @@ describe('watcher', () => {
               event({type: 'create', path: getPath('dir2'), ino: dirIno, fileId: dirFileId, kind: dirKind}, {backend}),
               event({type: 'create', path: getPath('dir2/subdir2'), ino: subdirIno, fileId: subdirFileId, kind: subdirKind}, {backend}),
             ]);
+          } else if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: getPath('dir'), path: getPath('dir2'), ino: dirIno, fileId: dirFileId, kind: dirKind}, {backend}),
+              event({type: 'rename', oldPath: getPath('dir2/subdir'), path: getPath('dir2/subdir2'), ino: subdirIno, fileId: subdirFileId, kind: subdirKind}, {backend}),
+            ]);
           } else {
             assert.deepEqual(res, [
               event({type: 'delete', path: getPath('dir'), ino: dirIno, fileId: dirFileId, kind: dirKind}, {backend}),
@@ -487,8 +525,7 @@ describe('watcher', () => {
 
           let res = await nextEvent();
           assert.deepEqual(res, [
-            event({type: 'delete', path: getPath('dir'), ino: dirIno, fileId: dirFileId, kind: dirKind}, {backend}),
-            event({type: 'create', path: getPath('dir2'), ino: dirIno, fileId: dirFileId, kind: dirKind}, {backend}),
+            event({type: 'rename', oldPath: getPath('dir'), path: getPath('dir2'), ino: dirIno, fileId: dirFileId, kind: dirKind}, {backend}),
             event({type: 'delete', path: getPath('dir2/subdir/subsubdir'), ino: subsubdirIno, fileId: subsubdirFileId, kind: subsubdirKind}, {backend}),
           ]);
         });
@@ -538,10 +575,16 @@ describe('watcher', () => {
           await fs.rename(f2, f3);
 
           let res = await nextEvent();
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f2, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f3, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f2, path: f3, kind, ino, fileId}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f2, kind, fileId}, {backend}),
+              event({type: 'create', path: f3, kind, fileId}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when a symlink is deleted', async () => {
@@ -644,12 +687,21 @@ describe('watcher', () => {
             let f4 = getFilename();
             await fs.writeFile(f1, 'hello world');
             let { ino, fileId, kind } = await getMetadata(f1);
+            await nextEvent();
+
             await fs.rename(f1, f2);
             await fs.rename(f2, f3);
             await fs.rename(f3, f4);
 
             let res = await nextEvent();
-            assert.deepEqual(res, [event({type: 'create', path: f4, ino, fileId, kind}, {backend})]);
+            if (backend === 'inotify' || backend === 'windows') {
+              assert.deepEqual(res, [event({type: 'rename', oldPath: f1, path: f4, ino, fileId, kind}, {backend})]);
+            } else {
+              assert.deepEqual(res, [
+                event({type: 'delete', path: f1, ino, fileId, kind}, {backend}),
+                event({type: 'create', path: f4, ino, fileId, kind}, {backend}),
+              ]);
+            }
           });
         }
 

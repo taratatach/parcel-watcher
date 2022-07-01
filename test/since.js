@@ -130,10 +130,16 @@ describe('since', () => {
           let res = await watcher.getEventsSince(tmpDir, snapshotPath, {
             backend,
           });
+          if (backend === 'inotify' || backend === 'windows') {
+          assert.deepEqual(res, [
+            event({type: 'rename', oldPath: f1, path: f2, kind, ino, fileId}, {backend}),
+          ]);
+          } else {
           assert.deepEqual(res, [
             event({type: 'delete', path: f1, ino, fileId, kind}, {backend}),
             event({type: 'create', path: f2, ino, fileId, kind}, {backend}),
           ]);
+          }
         });
 
         it('should emit when a file is deleted', async () => {
@@ -182,10 +188,16 @@ describe('since', () => {
             backend,
           });
 
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f1, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f2, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f1, path: f2, ino, fileId, kind}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f1, ino, fileId, kind}, {backend}),
+              event({type: 'create', path: f2, ino, fileId, kind}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when a directory is deleted', async () => {
@@ -261,10 +273,16 @@ describe('since', () => {
           let res = await watcher.getEventsSince(tmpDir, snapshotPath, {
             backend,
           });
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f2, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f3, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f2, path: f3, ino, fileId, kind}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f2, ino, fileId, kind}, {backend}),
+              event({type: 'create', path: f3, ino, fileId, kind}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when a sub-file is deleted', async () => {
@@ -320,10 +338,16 @@ describe('since', () => {
           let res = await watcher.getEventsSince(tmpDir, snapshotPath, {
             backend,
           });
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f2, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f3, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f2, path: f3, ino, fileId, kind}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f2, ino, fileId, kind}, {backend}),
+              event({type: 'create', path: f3, ino, fileId, kind}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when a sub-directory is deleted with files inside', async () => {
@@ -410,10 +434,16 @@ describe('since', () => {
           let res = await watcher.getEventsSince(tmpDir, snapshotPath, {
             backend,
           });
-          assert.deepEqual(res, [
-            event({type: 'delete', path: f2, ino, fileId, kind}, {backend}),
-            event({type: 'create', path: f3, ino, fileId, kind}, {backend}),
-          ]);
+          if (backend === 'inotify' || backend === 'windows') {
+            assert.deepEqual(res, [
+              event({type: 'rename', oldPath: f2, path: f3, ino, fileId, kind}, {backend}),
+            ]);
+          } else {
+            assert.deepEqual(res, [
+              event({type: 'delete', path: f2, ino, fileId, kind}, {backend}),
+              event({type: 'create', path: f3, ino, fileId, kind}, {backend}),
+            ]);
+          }
         });
 
         it('should emit when a symlink is deleted', async () => {
