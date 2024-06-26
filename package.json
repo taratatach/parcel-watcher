@@ -54,7 +54,7 @@
     "node-gyp-build": "^4.8.1"
   },
   "devDependencies": {
-    "@gyselroth/windows-fsstat": "https://github.com/taratatach/node-windows-fsstat.git#v1.0.0",
+    "@gyselroth/windows-fsstat": "https://github.com/taratatach/node-windows-fsstat.git#v2.0.0",
     "fs-extra": "^10.0.0",
     "husky": "^7.0.2",
     "lint-staged": "^11.1.2",
