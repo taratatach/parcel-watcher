@@ -67,7 +67,7 @@ void InotifyBackend::subscribe(Watcher &watcher) {
   std::shared_ptr<DirTree> tree = getTree(watcher);
 
   for (auto it = tree->entries.begin(); it != tree->entries.end(); it++) {
-    if (it->second.isDir) {
+    if (it->second.kind == IS_DIR) {
       bool success = watchDir(watcher, it->second.path, tree);
       if (!success) {
         throw WatcherError(std::string("inotify_add_watch on '") + it->second.path + std::string("' failed: ") + strerror(errno), &watcher);
@@ -112,6 +112,7 @@ void InotifyBackend::handleEvents() {
       break;
     }
 
+    auto now = std::chrono::system_clock::now();
     for (char *ptr = buf; ptr < buf + n; ptr += sizeof(*event) + event->len) {
       event = (struct inotify_event *)ptr;
 
@@ -120,7 +121,18 @@ void InotifyBackend::handleEvents() {
         continue;
       }
 
-      handleEvent(event, watchers);
+      handleEvent(event, now, watchers);
+    }
+  }
+
+  // Flush pending moves
+  // See https://github.com/facebook/watchman/blob/c7e0772cfb327ca1978488829c76829835c950ce/watchman/watcher/inotify.cpp#L436-L460
+  auto now = std::chrono::system_clock::now();
+  for (auto it = pendingMoves.begin(); it != pendingMoves.end();) {
+    if (now - it->second.created > std::chrono::seconds(5)) {
+      it = pendingMoves.erase(it);
+    } else {
+      ++it;
     }
   }
 
@@ -129,7 +141,11 @@ void InotifyBackend::handleEvents() {
   }
 }
 
-void InotifyBackend::handleEvent(struct inotify_event *event, std::unordered_set<Watcher *> &watchers) {
+void InotifyBackend::handleEvent(
+  struct inotify_event *event,
+  std::chrono::system_clock::time_point now,
+  std::unordered_set<Watcher *> &watchers
+) {
   std::unique_lock<std::mutex> lock(mMutex);
 
   // Find the subscriptions for this watch descriptor
@@ -140,17 +156,21 @@ void InotifyBackend::handleEvent(struct inotify_event *event, std::unordered_set
   }
 
   for (auto it = set.begin(); it != set.end(); it++) {
-    if (handleSubscription(event, *it)) {
+    if (handleSubscription(event, now, *it)) {
       watchers.insert((*it)->watcher);
     }
   }
 }
 
-bool InotifyBackend::handleSubscription(struct inotify_event *event, std::shared_ptr<InotifySubscription> sub) {
+bool InotifyBackend::handleSubscription(
+  struct inotify_event *event,
+  std::chrono::system_clock::time_point now,
+  std::shared_ptr<InotifySubscription> sub
+) {
   // Build full path and check if its in our ignore list.
   Watcher *watcher = sub->watcher;
   std::string path = std::string(sub->path);
-  bool isDir = event->mask & IN_ISDIR;
+  Kind kind = event->mask & IN_ISDIR ? IS_DIR : IS_FILE;
 
   if (event->len > 0) {
     path += "/" + std::string(event->name);
@@ -163,15 +183,34 @@ bool InotifyBackend::handleSubscription(struct inotify_event *event, std::shared
   // If this is a create, check if it's a directory and start watching if it is.
   // In any case, keep the directory tree up to date.
   if (event->mask & (IN_CREATE | IN_MOVED_TO)) {
-    watcher->mEvents.create(path);
-
     struct stat st;
     // Use lstat to avoid resolving symbolic links that we cannot watch anyway
     // https://github.com/parcel-bundler/watcher/issues/76
-    lstat(path.c_str(), &st);
-    DirEntry *entry = sub->tree->add(path, CONVERT_TIME(st.st_mtim), S_ISDIR(st.st_mode));
+    int result = lstat(path.c_str(), &st);
+    ino_t ino = result != -1 ? st.st_ino : FAKE_INO;
+    DirEntry *entry = sub->tree->add(path, ino, CONVERT_TIME(st.st_mtim), S_ISDIR(st.st_mode) ? IS_DIR : kind);
 
-    if (entry->isDir) {
+    auto found = pendingMoves.find(event->cookie);
+    if (found != pendingMoves.end()) {
+      PendingMove pending = found->second;
+      std::string dirPath = pending.path + DIR_SEP;
+
+      if (entry->kind == IS_DIR) {
+        // Replace parent dir path in sub-dir subscriptions
+        for (auto it = mSubscriptions.begin(); it != mSubscriptions.end(); it++) {
+          if (it->second->path.rfind(dirPath.c_str(), 0) == 0) {
+            it->second->path.replace(0, pending.path.length(), path);
+          }
+        }
+      }
+
+      watcher->mEvents.rename(pending.path, path, kind, ino);
+      pendingMoves.erase(found);
+    } else {
+      watcher->mEvents.create(path, kind, ino);
+    }
+
+    if (entry->kind == IS_DIR) {
       bool success = watchDir(*watcher, path, sub->tree);
       if (!success) {
         sub->tree->remove(path);
@@ -179,11 +218,11 @@ bool InotifyBackend::handleSubscription(struct inotify_event *event, std::shared
       }
     }
   } else if (event->mask & (IN_MODIFY | IN_ATTRIB)) {
-    watcher->mEvents.update(path);
-
     struct stat st;
-    stat(path.c_str(), &st);
-    sub->tree->update(path, CONVERT_TIME(st.st_mtim));
+    int result = stat(path.c_str(), &st);
+    ino_t ino = result != -1 ? st.st_ino : FAKE_INO;
+    watcher->mEvents.update(path, ino);
+    sub->tree->update(path, ino, CONVERT_TIME(st.st_mtim));
   } else if (event->mask & (IN_DELETE | IN_DELETE_SELF | IN_MOVED_FROM | IN_MOVE_SELF)) {
     bool isSelfEvent = (event->mask & (IN_DELETE_SELF | IN_MOVE_SELF));
     // Ignore delete/move self events unless this is the recursive watch root
@@ -191,9 +230,13 @@ bool InotifyBackend::handleSubscription(struct inotify_event *event, std::shared
       return false;
     }
 
+    if (event->mask & IN_MOVED_FROM) {
+      pendingMoves.emplace(event->cookie, PendingMove(now, path));
+    }
+
     // If the entry being deleted/moved is a directory, remove it from the list of subscriptions
     // XXX: self events don't have the IN_ISDIR mask
-    if (isSelfEvent || isDir) {
+    if (isSelfEvent || kind == IS_DIR) {
       for (auto it = mSubscriptions.begin(); it != mSubscriptions.end();) {
         if (it->second->path == path) {
           it = mSubscriptions.erase(it);
@@ -203,7 +246,10 @@ bool InotifyBackend::handleSubscription(struct inotify_event *event, std::shared
       }
     }
 
-    watcher->mEvents.remove(path);
+    DirEntry *entry = sub->tree->find(path);
+    ino_t ino = entry ? entry->ino : FAKE_INO;
+
+    watcher->mEvents.remove(path, isSelfEvent ? IS_DIR : kind, ino);
     sub->tree->remove(path);
   }
 

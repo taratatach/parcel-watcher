@@ -4,8 +4,8 @@
 #include "../Event.hh"
 #include "./BruteForceBackend.hh"
 
-std::shared_ptr<DirTree> BruteForceBackend::getTree(Watcher &watcher, bool shouldRead) {
-  auto tree = DirTree::getCached(watcher.mDir);
+std::shared_ptr<DirTree> BruteForceBackend::getTree(Watcher &watcher, bool shouldRead, bool recursiveRemove) {
+  auto tree = DirTree::getCached(watcher.mDir, recursiveRemove);
 
   // If the tree is not complete, read it if needed.
   if (!tree->isComplete && shouldRead) {
@@ -14,6 +14,14 @@ std::shared_ptr<DirTree> BruteForceBackend::getTree(Watcher &watcher, bool shoul
   }
 
   return tree;
+}
+
+void BruteForceBackend::scan(Watcher &watcher) {
+  std::unique_lock<std::mutex> lock(mMutex);
+  auto tree = getTree(watcher);
+  for (auto it = tree->entries.begin(); it != tree->entries.end(); it++) {
+    watcher.mEvents.create(it->second.path, it->second.kind, it->second.ino, it->second.fileId);
+  }
 }
 
 void BruteForceBackend::writeSnapshot(Watcher &watcher, std::string *snapshotPath) {

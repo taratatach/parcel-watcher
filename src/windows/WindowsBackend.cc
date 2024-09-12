@@ -9,6 +9,13 @@
 #define NETWORK_BUF_SIZE 64 * 1024
 #define CONVERT_TIME(ft) ULARGE_INTEGER{ft.dwLowDateTime, ft.dwHighDateTime}.QuadPart
 
+bool isDir(DWORD fileAttributes) {
+  // Returns true if file attributes contain the directory attribute but not the
+  // symlink attribute.
+  return (fileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+      && !(fileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+}
+
 void BruteForceBackend::readTree(Watcher &watcher, std::shared_ptr<DirTree> tree) {
   std::stack<std::string> directories;
 
@@ -21,8 +28,8 @@ void BruteForceBackend::readTree(Watcher &watcher, std::shared_ptr<DirTree> tree
     std::string spec = path + "\\*";
     directories.pop();
 
-    WIN32_FIND_DATA ffd;
-    hFind = FindFirstFile(spec.c_str(), &ffd);
+    WIN32_FIND_DATAW ffd;
+    hFind = FindFirstFileW(extendedWidePath(spec).data(), &ffd);
 
     if (hFind == INVALID_HANDLE_VALUE)  {
       if (path == watcher.mDir) {
@@ -35,18 +42,20 @@ void BruteForceBackend::readTree(Watcher &watcher, std::shared_ptr<DirTree> tree
     }
 
     do {
-      if (strcmp(ffd.cFileName, ".") != 0 && strcmp(ffd.cFileName, "..") != 0) {
-        std::string fullPath = path + "\\" + ffd.cFileName;
+      if (wcscmp(ffd.cFileName, L".") != 0 && wcscmp(ffd.cFileName, L"..") != 0) {
+        std::string fullPath = path + "\\" + utf16ToUtf8(ffd.cFileName, sizeof(ffd.cFileName));
         if (watcher.isIgnored(fullPath)) {
           continue;
         }
 
-        tree->add(fullPath, CONVERT_TIME(ffd.ftLastWriteTime), ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
-        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        Kind kind = isDir(ffd.dwFileAttributes) ? IS_DIR : IS_FILE;
+        std::string fileId = getFileId(fullPath);
+        tree->add(fullPath, FAKE_INO, CONVERT_TIME(ffd.ftLastWriteTime), kind, fileId);
+        if (kind == IS_DIR) {
           directories.push(fullPath);
         }
       }
-    } while (FindNextFile(hFind, &ffd) != 0);
+    } while (FindNextFileW(hFind, &ffd) != 0);
 
     FindClose(hFind);
   }
@@ -80,7 +89,7 @@ public:
     mWriteBuffer.resize(DEFAULT_BUF_SIZE);
 
     mDirectoryHandle = CreateFileW(
-      utf8ToUtf16(watcher->mDir).data(),
+      extendedWidePath(watcher->mDir).data(),
       FILE_LIST_DIRECTORY,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
       NULL,
@@ -104,7 +113,7 @@ public:
       throw WatcherError("Could not get file information", mWatcher);
     }
 
-    if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+    if (!isDir(info.dwFileAttributes)) {
       throw WatcherError("Not a directory", mWatcher);
     }
   }
@@ -157,6 +166,15 @@ public:
     if (!success) {
       throw WatcherError("Failed to read changes", mWatcher);
     }
+
+    auto now = std::chrono::system_clock::now();
+    for (auto it = pendingMoves.begin(); it != pendingMoves.end();) {
+      if (now - it->second.created > std::chrono::seconds(5)) {
+        it = pendingMoves.erase(it);
+      } else {
+        ++it;
+      }
+    }
   }
 
   void processEvents(DWORD errorCode) {
@@ -178,10 +196,10 @@ public:
       case ERROR_ACCESS_DENIED: {
         // This can happen if the watched directory is deleted. Check if that is the case,
         // and if so emit a delete event. Otherwise, fall through to default error case.
-        DWORD attrs = GetFileAttributesW(utf8ToUtf16(mWatcher->mDir).data());
-        bool isDir = attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
-        if (!isDir) {
-          mWatcher->mEvents.remove(mWatcher->mDir);
+        DWORD attrs = GetFileAttributesW(extendedWidePath(mWatcher->mDir).data());
+        Kind kind = attrs == INVALID_FILE_ATTRIBUTES ? IS_UNKNOWN : isDir(attrs) ? IS_DIR : IS_FILE;
+        if (kind == IS_UNKNOWN) {
+          mWatcher->mEvents.remove(mWatcher->mDir, IS_DIR, FAKE_INO);
           mTree->remove(mWatcher->mDir);
           mWatcher->notify();
           stop();
@@ -215,6 +233,8 @@ public:
   }
 
   void processEvent(PFILE_NOTIFY_INFORMATION info) {
+    auto now = std::chrono::system_clock::now();
+
     std::string path = mWatcher->mDir + "\\" + utf16ToUtf8(info->FileName, info->FileNameLength / sizeof(WCHAR));
     if (mWatcher->isIgnored(path)) {
       return;
@@ -224,25 +244,59 @@ public:
       case FILE_ACTION_ADDED:
       case FILE_ACTION_RENAMED_NEW_NAME: {
         WIN32_FILE_ATTRIBUTE_DATA data;
-        if (GetFileAttributesExW(utf8ToUtf16(path).data(), GetFileExInfoStandard, &data)) {
-          mWatcher->mEvents.create(path);
-          mTree->add(path, CONVERT_TIME(data.ftLastWriteTime), data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
+        if (GetFileAttributesExW(extendedWidePath(path).data(), GetFileExInfoStandard, &data)) {
+          Kind kind = isDir(data.dwFileAttributes) ? IS_DIR : IS_FILE;
+          std::string fileId = getFileId(path);
+
+          auto found = pendingMoves.find(fileId);
+          if (found != pendingMoves.end()) {
+            PendingMove pending = found->second;
+
+            if (kind == IS_DIR) {
+              std::string dirPath = pending.path + DIR_SEP;
+              // Replace parent dir path in tree
+              for (auto it = mTree->entries.begin(); it != mTree->entries.end();) {
+                DirEntry entry = it->second;
+                if (entry.path.rfind(dirPath.c_str(), 0) == 0) {
+                  entry.path.replace(0, pending.path.length(), path);
+                  mTree->entries.emplace(entry.path, entry);
+                  it = mTree->entries.erase(it);
+                } else {
+                 it++;
+                }
+              }
+            }
+
+            mWatcher->mEvents.rename(pending.path, path, kind, FAKE_INO, fileId);
+            pendingMoves.erase(found);
+          } else {
+            mWatcher->mEvents.create(path, kind, FAKE_INO, fileId);
+          }
+          mTree->add(path, FAKE_INO, CONVERT_TIME(data.ftLastWriteTime), kind, fileId);
         }
         break;
       }
       case FILE_ACTION_MODIFIED: {
         WIN32_FILE_ATTRIBUTE_DATA data;
-        if (GetFileAttributesExW(utf8ToUtf16(path).data(), GetFileExInfoStandard, &data)) {
-          mTree->update(path, CONVERT_TIME(data.ftLastWriteTime));
-          if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            mWatcher->mEvents.update(path);
+        if (GetFileAttributesExW(extendedWidePath(path).data(), GetFileExInfoStandard, &data)) {
+          Kind kind = isDir(data.dwFileAttributes) ? IS_DIR : IS_FILE;
+          std::string fileId = getFileId(path);
+          mTree->update(path, FAKE_INO, CONVERT_TIME(data.ftLastWriteTime), fileId);
+          if (kind != IS_DIR) {
+            mWatcher->mEvents.update(path, FAKE_INO, fileId);
           }
         }
         break;
       }
       case FILE_ACTION_REMOVED:
       case FILE_ACTION_RENAMED_OLD_NAME:
-        mWatcher->mEvents.remove(path);
+        auto entry = mTree->find(path);
+        if (entry) {
+          pendingMoves.emplace(entry->fileId, PendingMove(now, path));
+          mWatcher->mEvents.remove(path, entry->kind, entry->ino, entry->fileId);
+        } else {
+          mWatcher->mEvents.remove(path, IS_UNKNOWN, FAKE_INO);
+        }
         mTree->remove(path);
         break;
     }
@@ -252,6 +306,7 @@ private:
   WindowsBackend *mBackend;
   Watcher *mWatcher;
   std::shared_ptr<DirTree> mTree;
+  std::unordered_multimap<std::string, PendingMove> pendingMoves;
   bool mRunning;
   HANDLE mDirectoryHandle;
   std::vector<BYTE> mReadBuffer;
@@ -262,7 +317,7 @@ private:
 // This function is called by Backend::watch which takes a lock on mMutex
 void WindowsBackend::subscribe(Watcher &watcher) {
   // Create a subscription for this watcher
-  Subscription *sub = new Subscription(this, &watcher, getTree(watcher, false));
+  Subscription *sub = new Subscription(this, &watcher, getTree(watcher, false, false));
   watcher.state = (void *)sub;
 
   // Queue polling for this subscription in the correct thread.

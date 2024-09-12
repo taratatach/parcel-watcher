@@ -53,7 +53,7 @@ std::string getSockPath() {
   BSER b = readBSER([fp] (char *buf, size_t len) {
     return fread(buf, sizeof(char), len, fp);
   });
-  
+
   pclose(fp);
 
   auto objValue = b.objectValue();
@@ -92,6 +92,10 @@ BSER::Object WatchmanBackend::watchmanRequest(BSER b) {
   return mResponse;
 }
 
+void WatchmanBackend::scan(Watcher &watcher) {
+  return;
+}
+
 void WatchmanBackend::watchmanWatch(std::string dir) {
   std::vector<BSER> cmd;
   cmd.push_back("watch");
@@ -113,7 +117,7 @@ void handleFiles(Watcher &watcher, BSER::Object obj) {
   if (found == obj.end()) {
     throw WatcherError("Error reading changes from watchman", &watcher);
   }
-  
+
   auto files = found->second.arrayValue();
   for (auto it = files.begin(); it != files.end(); it++) {
     auto file = it->objectValue();
@@ -121,8 +125,10 @@ void handleFiles(Watcher &watcher, BSER::Object obj) {
     #ifdef _WIN32
       std::replace(name.begin(), name.end(), '/', '\\');
     #endif
+    auto ino = file.find("ino")->second.intValue();
     auto mode = file.find("mode")->second.intValue();
     auto isNew = file.find("new")->second.boolValue();
+    Kind kind = S_ISDIR(mode) ? IS_DIR : IS_FILE;
     auto exists = file.find("exists")->second.boolValue();
     auto path = watcher.mDir + DIR_SEP + name;
     if (watcher.isIgnored(path)) {
@@ -130,11 +136,11 @@ void handleFiles(Watcher &watcher, BSER::Object obj) {
     }
 
     if (isNew && exists) {
-      watcher.mEvents.create(path);
-    } else if (exists && !S_ISDIR(mode)) {
-      watcher.mEvents.update(path);
+      watcher.mEvents.create(path, kind, ino);
+    } else if (exists && kind != IS_DIR) {
+      watcher.mEvents.update(path, ino);
     } else if (!isNew && !exists) {
-      watcher.mEvents.remove(path);
+      watcher.mEvents.remove(path, kind, ino);
     }
   }
 }
@@ -284,6 +290,7 @@ void WatchmanBackend::subscribe(Watcher &watcher) {
 
   BSER::Array fields;
   fields.push_back("name");
+  fields.push_back("ino");
   fields.push_back("mode");
   fields.push_back("exists");
   fields.push_back("new");
@@ -325,7 +332,7 @@ void WatchmanBackend::subscribe(Watcher &watcher) {
 void WatchmanBackend::unsubscribe(Watcher &watcher) {
   std::string id = getId(watcher);
   auto erased = mSubscriptions.erase(id);
-  
+
   if (erased) {
     BSER::Array cmd;
     cmd.push_back("unsubscribe");
