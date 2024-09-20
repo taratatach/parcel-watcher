@@ -122,7 +122,7 @@ void FSEventsCallback(
         entry->mtime = mtime;
       } else {
         // Add to tree if this path has not been discovered yet.
-        state->tree->add(paths[i], FAKE_INO, mtime, S_ISDIR(file.st_mode));
+        state->tree->add(paths[i], FAKE_INO, mtime, S_ISDIR(file.st_mode) ? IS_DIR : kind);
       }
 
       list->update(paths[i], FAKE_INO);
