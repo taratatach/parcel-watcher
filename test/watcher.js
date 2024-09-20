@@ -29,7 +29,7 @@ const getMetadata = async (p) => {
   } else {
     const stats = await fs.lstat(p);
     return {
-      ino: stats.ino,
+      ino: String(stats.ino),
       kind: stats.isDirectory() ? 'directory' : 'file',
     };
   }
@@ -69,13 +69,21 @@ describe('watcher', () => {
           throw err;
         }
 
-        setImmediate(() => {
+        let fireEvents = () => {
+          while (cbs.length === 0) {
+            // XXX: Retry firing events if we did not have any enqueued callback
+            // yet.
+            setImmediate(fireEvents);
+            return
+          }
+
           for (let cb of cbs) {
             cb(events);
           }
 
           cbs = [];
-        });
+        };
+        setImmediate(fireEvents);
       };
 
       let c = 0;
@@ -1103,16 +1111,19 @@ describe('watcher', () => {
         });
 
         it('should ignore globs', async () => {
-          fs.writeFile(path.join(ignoreGlobDir, 'test.txt'), 'hello');
+          let notIgnoredPath = path.join(ignoreGlobDir, 'test.txt');
+
+          fs.writeFile(notIgnoredPath, 'hello');
           fs.writeFile(path.join(ignoreGlobDir, 'test.ignore'), 'hello');
           fs.writeFile(path.join(ignoreGlobDir, 'ignore', 'test.txt'), 'hello');
           fs.writeFile(path.join(ignoreGlobDir, 'ignore', 'test.ignore'), 'hello');
           fs.writeFile(path.join(ignoreGlobDir, 'erongi', 'test.txt'), 'hello');
           fs.writeFile(path.join(ignoreGlobDir, 'erongi', 'deep', 'test.txt'), 'hello');
 
+          let {ino, fileId, kind} = await getMetadata(notIgnoredPath);
           let res = await nextEvent();
           assert.deepEqual(res, [
-            {type: 'create', path: path.join(ignoreGlobDir, 'test.txt')},
+            event({type: 'create', path: notIgnoredPath, ino, fileId, kind}, {backend}),
           ]);
         });
       });
