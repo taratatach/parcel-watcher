@@ -294,8 +294,6 @@ public:
         if (entry) {
           pendingMoves.emplace(entry->fileId, PendingMove(now, path));
           mWatcher->mEvents.remove(path, entry->kind, entry->ino, entry->fileId);
-        } else {
-          mWatcher->mEvents.remove(path, IS_UNKNOWN, FAKE_INO);
         }
         mTree->remove(path);
         break;
