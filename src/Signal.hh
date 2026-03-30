@@ -3,6 +3,7 @@
 
 #include <mutex>
 #include <condition_variable>
+#include <chrono>
 
 class Signal {
 public:
@@ -31,7 +32,7 @@ public:
     mFlag = false;
     mWaiting = false;
   }
-  
+
   bool isWaiting() {
     return mWaiting;
   }
