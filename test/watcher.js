@@ -312,6 +312,25 @@ describe('watcher', () => {
           ]);
         });
 
+        it('should emit update with directory kind when permissions change', async () => {
+          if (backend !== 'inotify') {
+            // Other backends don't emit updates for attribute changes
+            return;
+          }
+
+          let d = getFilename();
+          await fs.mkdir(d);
+          await nextEvent();
+
+          await fs.chmod(d, 0o700);
+          let {ino, kind} = await getMetadata(d);
+
+          let res = await nextEvent();
+          assert.deepEqual(res, [
+            event({type: 'update', path: d, ino, kind}, {backend}),
+          ]);
+        });
+
         it('should handle when the directory to watch is deleted', async () => {
           if (backend === 'watchman') {
             // Watchman doesn't handle this correctly

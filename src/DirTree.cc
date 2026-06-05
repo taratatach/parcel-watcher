@@ -170,14 +170,14 @@ void DirTree::getChanges(DirTree *snapshot, EventList &events) {
           }
         }
       } else if (isFile && !sameMtime) {
-        events.update(it->second.path, it->second.ino, it->second.fileId);
+        events.update(it->second.path, it->second.ino, it->second.kind, it->second.fileId);
       }
     } else {
       auto found = snapshot->entries.find(it->first);
       if (found == snapshot->entries.end()) {
         events.create(it->second.path, it->second.kind, it->second.ino, it->second.fileId);
       } else if (found->second.mtime != it->second.mtime && found->second.kind != IS_DIR && it->second.kind != IS_DIR) {
-        events.update(it->second.path, it->second.ino, it->second.fileId);
+        events.update(it->second.path, it->second.ino, it->second.kind, it->second.fileId);
       }
     }
   }

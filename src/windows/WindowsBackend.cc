@@ -283,7 +283,7 @@ public:
           std::string fileId = getFileId(path);
           mTree->update(path, FAKE_INO, CONVERT_TIME(data.ftLastWriteTime), fileId);
           if (kind != IS_DIR) {
-            mWatcher->mEvents.update(path, FAKE_INO, fileId);
+            mWatcher->mEvents.update(path, FAKE_INO, IS_UNKNOWN, fileId);
           }
         }
         break;

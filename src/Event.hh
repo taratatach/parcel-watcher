@@ -67,9 +67,9 @@ public:
     }
   }
 
-  Event *update(std::string path, ino_t ino, std::string fileId = FAKE_FILEID) {
+  Event *update(std::string path, ino_t ino, Kind kind = IS_UNKNOWN, std::string fileId = FAKE_FILEID) {
     std::lock_guard<std::mutex> l(mMutex);
-    return internalUpdate(path, IS_FILE, ino, fileId);
+    return internalUpdate(path, kind, ino, fileId);
   }
 
   void remove(std::string path, Kind kind, ino_t ino, std::string fileId = FAKE_FILEID) {
