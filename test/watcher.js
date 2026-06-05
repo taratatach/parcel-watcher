@@ -123,6 +123,24 @@ describe('watcher', () => {
           ]);
         });
 
+        it('should emit a single create event when writing a large file', async () => {
+          let f = getFilename();
+          let stream = fs.createWriteStream(f);
+          let chunk = Buffer.alloc(1024 * 1024, 'x'); // 1 Mo
+          for (let i = 0; i < 10; i++) {
+            stream.write(chunk);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          stream.end();
+          await new Promise((resolve) => stream.on('finish', resolve));
+
+          let {ino, fileId, kind} = await getMetadata(f);
+          let res = await nextEvent();
+          assert.deepEqual(res, [
+            event({type: 'create', path: f, ino, fileId, kind}, {backend}),
+          ]);
+        });
+
         it('should emit when a file is updated', async () => {
           let f = getFilename();
           await fs.writeFile(f, 'hello world');

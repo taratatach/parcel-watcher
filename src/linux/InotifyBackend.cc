@@ -4,7 +4,7 @@
 #include "InotifyBackend.hh"
 
 #define INOTIFY_MASK \
-  IN_ATTRIB | IN_CREATE | IN_DELETE | \
+  IN_ATTRIB | IN_CREATE | IN_CLOSE_WRITE | IN_DELETE | \
   IN_DELETE_SELF | IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | \
   IN_MOVED_TO | IN_DONT_FOLLOW | IN_ONLYDIR | IN_EXCL_UNLINK
 #define BUFFER_SIZE 8192
@@ -136,6 +136,9 @@ void InotifyBackend::handleEvents() {
     }
   }
 
+  // Flush pending writes that have been inactive for too long
+  flushPendingWrites(now, watchers);
+
   for (auto it = watchers.begin(); it != watchers.end(); it++) {
     (*it)->notify();
   }
@@ -204,10 +207,22 @@ bool InotifyBackend::handleSubscription(
         }
       }
 
+      // If the destination was pending a create, emit it first
+      auto writeIt = mPendingWrites[watcher].find(path);
+      if (writeIt != mPendingWrites[watcher].end()) {
+        watcher->mEvents.create(path, writeIt->second.kind, writeIt->second.ino);
+        mPendingWrites[watcher].erase(writeIt);
+      }
+
       watcher->mEvents.rename(pending.path, path, kind, ino);
       pendingMoves.erase(found);
     } else {
-      watcher->mEvents.create(path, kind, ino);
+      // Buffer regular files until IN_CLOSE_WRITE to avoid create + update events
+      if (entry->kind == IS_FILE && result != -1 && S_ISREG(st.st_mode) && st.st_nlink == 1) {
+        mPendingWrites[watcher][path] = {path, IS_FILE, ino, now, true};
+      } else {
+        watcher->mEvents.create(path, kind, ino);
+      }
     }
 
     if (entry->kind == IS_DIR) {
@@ -217,12 +232,42 @@ bool InotifyBackend::handleSubscription(
         return false;
       }
     }
-  } else if (event->mask & (IN_MODIFY | IN_ATTRIB)) {
+  } else if (event->mask & IN_CLOSE_WRITE) {
+    auto it = mPendingWrites[watcher].find(path);
+    if (it != mPendingWrites[watcher].end()) {
+      // This was a new file, emit a single create event
+      if (it->second.isNew) {
+        watcher->mEvents.create(path, it->second.kind, it->second.ino);
+      } else {
+        watcher->mEvents.update(path, it->second.ino, it->second.kind);
+      }
+      mPendingWrites[watcher].erase(it);
+      return true;
+    }
+  } else if (event->mask & IN_MODIFY) {
     struct stat st;
     int result = stat(path.c_str(), &st);
     ino_t ino = result != -1 ? st.st_ino : FAKE_INO;
-    watcher->mEvents.update(path, ino);
     sub->tree->update(path, ino, CONVERT_TIME(st.st_mtim));
+
+    auto it = mPendingWrites[watcher].find(path);
+    if (it != mPendingWrites[watcher].end()) {
+      it->second.lastTouched = now;
+      it->second.ino = ino;
+    } else {
+      mPendingWrites[watcher][path] = {path, kind, ino, now, false};
+    }
+  } else if (event->mask & IN_ATTRIB) {
+    auto it = mPendingWrites[watcher].find(path);
+    if (it != mPendingWrites[watcher].end()) {
+      it->second.lastTouched = now;
+    } else {
+      struct stat st;
+      int result = stat(path.c_str(), &st);
+      ino_t ino = result != -1 ? st.st_ino : FAKE_INO;
+      watcher->mEvents.update(path, ino, kind);
+      sub->tree->update(path, ino, CONVERT_TIME(st.st_mtim));
+    }
   } else if (event->mask & (IN_DELETE | IN_DELETE_SELF | IN_MOVED_FROM | IN_MOVE_SELF)) {
     bool isSelfEvent = (event->mask & (IN_DELETE_SELF | IN_MOVE_SELF));
     // Ignore delete/move self events unless this is the recursive watch root
@@ -232,6 +277,12 @@ bool InotifyBackend::handleSubscription(
 
     if (event->mask & IN_MOVED_FROM) {
       pendingMoves.emplace(event->cookie, PendingMove(now, path));
+    }
+
+    // Remove from pending writes if present
+    auto writeIt = mPendingWrites[watcher].find(path);
+    if (writeIt != mPendingWrites[watcher].end()) {
+      mPendingWrites[watcher].erase(writeIt);
     }
 
     // If the entry being deleted/moved is a directory, remove it from the list of subscriptions
@@ -256,8 +307,39 @@ bool InotifyBackend::handleSubscription(
   return true;
 }
 
+void InotifyBackend::flushPendingWrites(
+  std::chrono::system_clock::time_point now,
+  std::unordered_set<Watcher *> &watchers
+) {
+  for (auto it = mPendingWrites.begin(); it != mPendingWrites.end();) {
+    Watcher *watcher = it->first;
+    for (auto pw = it->second.begin(); pw != it->second.end();) {
+      if (now - pw->second.lastTouched > std::chrono::seconds(30)) {
+        if (pw->second.isNew) {
+          watcher->mEvents.create(pw->second.path, pw->second.kind, pw->second.ino);
+        } else {
+          watcher->mEvents.update(pw->second.path, pw->second.ino, pw->second.kind);
+        }
+        watchers.insert(watcher);
+        pw = it->second.erase(pw);
+      } else {
+        ++pw;
+      }
+    }
+
+    if (it->second.empty()) {
+      it = mPendingWrites.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 // This function is called by Backend::unwatch which takes a lock on mMutex
 void InotifyBackend::unsubscribe(Watcher &watcher) {
+  // Remove any pending writes for this watcher
+  mPendingWrites.erase(&watcher);
+
   // Find any subscriptions pointing to this watcher, and remove them.
   for (auto it = mSubscriptions.begin(); it != mSubscriptions.end();) {
     if (it->second->watcher == &watcher) {

@@ -7,6 +7,14 @@
 #include "../DirTree.hh"
 #include "../Signal.hh"
 
+struct PendingFileWrite {
+  std::string path;
+  Kind kind;
+  ino_t ino;
+  std::chrono::system_clock::time_point lastTouched;
+  bool isNew;
+};
+
 struct InotifySubscription {
   std::shared_ptr<DirTree> tree;
   std::string path;
@@ -24,12 +32,14 @@ private:
   int mInotify;
   std::unordered_multimap<int, std::shared_ptr<InotifySubscription>> mSubscriptions;
   std::unordered_multimap<uint32_t, PendingMove> pendingMoves;
+  std::unordered_map<Watcher *, std::unordered_map<std::string, PendingFileWrite>> mPendingWrites;
   Signal mEndedSignal;
 
   bool watchDir(Watcher &watcher, std::string path, std::shared_ptr<DirTree> tree);
   void handleEvents();
   void handleEvent(struct inotify_event *event, std::chrono::system_clock::time_point now, std::unordered_set<Watcher *> &watchers);
   bool handleSubscription(struct inotify_event *event, std::chrono::system_clock::time_point now, std::shared_ptr<InotifySubscription> sub);
+  void flushPendingWrites(std::chrono::system_clock::time_point now, std::unordered_set<Watcher *> &watchers);
 };
 
 #endif
